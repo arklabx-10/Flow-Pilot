@@ -211,4 +211,46 @@ describe('FlowPilot Desktop Dictation Vertical Slice UI', () => {
     });
     expect(screen.getByRole('alert').textContent).toContain('Invalid OpenAI API key provided.');
   });
+
+  it('provides Phase 3 local vs cloud speech settings, explicit outbound audio notice, and local model management', async () => {
+    const services = createTestServices();
+    render(<App services={services} />);
+
+    // Default speech provider is Local (no outbound audio notice)
+    expect(screen.queryByTestId('outbound-audio-notice')).toBeNull();
+
+    // Switch speech provider to Cloud and verify explicit outbound audio transfer notice appears
+    const speechProviderSelect = screen.getByLabelText(/speech provider/i);
+    fireEvent.change(speechProviderSelect, { target: { value: 'cloud' } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('outbound-audio-notice')).toBeDefined();
+    });
+    expect(screen.getByTestId('outbound-audio-notice').textContent).toContain(
+      'Outbound Audio Notice',
+    );
+
+    // Independently configure Text-Refinement Provider, Language, Cloud Sync, and Recording Retention
+    const refinementSelect = screen.getByLabelText(/text-refinement provider/i);
+    fireEvent.change(refinementSelect, { target: { value: 'cloud' } });
+    expect((refinementSelect as HTMLSelectElement).value).toBe('cloud');
+
+    const languageSelect = screen.getByLabelText(/transcription language/i);
+    fireEvent.change(languageSelect, { target: { value: 'es' } });
+    expect((languageSelect as HTMLSelectElement).value).toBe('es');
+
+    const syncToggle = screen.getByLabelText(
+      /sync saved transcripts to cloud/i,
+    ) as HTMLInputElement;
+    expect(syncToggle.checked).toBe(false);
+    fireEvent.click(syncToggle);
+    expect(syncToggle.checked).toBe(true);
+
+    const retainToggle = screen.getByLabelText(
+      /retain audio recording in session/i,
+    ) as HTMLInputElement;
+    expect(retainToggle.checked).toBe(false);
+    fireEvent.click(retainToggle);
+    expect(retainToggle.checked).toBe(true);
+  });
 });

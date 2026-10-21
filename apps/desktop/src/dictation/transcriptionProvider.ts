@@ -30,17 +30,8 @@ export class OpenAiWhisperTranscriptionProvider implements TranscriptionProvider
   private readonly fetchImpl: typeof fetch;
 
   constructor(options?: OpenAiWhisperProviderOptions) {
-    this.getApiKeyImpl =
-      options?.getApiKey ??
-      (() => {
-        const envKey = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
-        return envKey ? envKey.trim() : '';
-      });
-    this.baseUrl = (
-      options?.baseUrl ??
-      (import.meta.env.VITE_OPENAI_API_BASE_URL as string | undefined) ??
-      DEFAULT_OPENAI_BASE_URL
-    ).replace(/\/+$/, '');
+    this.getApiKeyImpl = options?.getApiKey ?? (() => '');
+    this.baseUrl = (options?.baseUrl ?? DEFAULT_OPENAI_BASE_URL).replace(/\/+$/, '');
     this.model = options?.model ?? DEFAULT_WHISPER_MODEL;
     this.fetchImpl = options?.fetchImpl ?? ((input, init) => fetch(input, init));
   }

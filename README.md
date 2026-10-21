@@ -103,4 +103,5 @@ Or run individual checks:
 - [docs/architecture.md](./docs/architecture.md) — System architecture, data boundaries (SQLite vs. PostgreSQL), and contract versioning
 - [docs/local-development.md](./docs/local-development.md) — Detailed local development workflow and Docker Compose guide
 - [docs/windows-prerequisites.md](./docs/windows-prerequisites.md) — Windows desktop development prerequisites (Rust, MSVC, WebView2, Node.js, .NET SDK)
-- [docs/windows-manual-testing.md](./docs/windows-manual-testing.md) — Repeatable manual test checklist for Windows recording, transcription, clipboard, and local history
+- [docs/local-speech-models.md](./docs/local-speech-models.md) — Local `whisper.cpp` GGML model licensing, storage requirements, resource usage, and offline setup
+- [docs/windows-manual-testing.md](./docs/windows-manual-testing.md) — Repeatable manual test checklist for Windows recording, local/cloud transcription, clipboard, and local history

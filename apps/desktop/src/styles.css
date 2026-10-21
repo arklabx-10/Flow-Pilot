@@ -101,6 +101,64 @@ body {
   color: #fef3c7;
 }
 
+.banner-info {
+  background: #0c4a6e;
+  border: 1px solid #0284c7;
+  color: #e0f2fe;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.75rem;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.model-status-box {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  background: #0b0f19;
+  border: 1px solid #1e293b;
+  border-radius: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.82rem;
+}
+
+.model-status-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.model-error-text {
+  color: #fca5a5;
+  font-size: 0.78rem;
+}
+
+.privacy-toggles-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.5rem 0;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
 .banner-error {
   background: #450a0a;
   border: 1px solid #ef4444;

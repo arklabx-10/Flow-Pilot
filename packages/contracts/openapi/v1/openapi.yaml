@@ -5,8 +5,8 @@ info:
   summary: Shared backend API for FlowPilot desktop and web companion clients.
   description: >
     Explicit, versioned HTTP contract for FlowPilot account synchronization,
-    health probes, and companion web operations. Desktop-local offline dictation
-    storage is persisted locally in SQLite and synchronized via versioned endpoints.
+    cloud speech transcription proxy (keeping privileged provider keys on the backend),
+    cloud text refinement, and health probes.
   contact:
     name: FlowPilot Architecture Team
 servers:
@@ -15,6 +15,10 @@ servers:
 tags:
   - name: Health
     description: Service health and readiness probes
+  - name: Speech
+    description: Cloud speech recognition and text refinement endpoints
+  - name: Sync
+    description: Optional user-authorized transcript synchronization
 paths:
   /health:
     get:
@@ -44,6 +48,84 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthStatusResponseV1'
+  /api/v1/speech/transcribe:
+    post:
+      operationId: transcribeSpeechV1
+      tags:
+        - Speech
+      summary: Transcribe captured audio via configured cloud speech provider
+      description: >
+        Accepts audio bytes via multipart/form-data and forwards to the server-configured
+        cloud speech recognition provider without exposing privileged API keys to clients.
+      responses:
+        '200':
+          description: Successful cloud transcription response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloudTranscriptionResponseV1'
+        '400':
+          description: Empty or invalid audio payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseV1'
+        '413':
+          description: Audio payload exceeds usage/size limit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseV1'
+        '429':
+          description: Upstream provider rate limit exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseV1'
+        '503':
+          description: Cloud speech provider credentials are not configured on the backend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponseV1'
+  /api/v1/text/refine:
+    post:
+      operationId: refineTextV1
+      tags:
+        - Speech
+      summary: Refine raw transcript using cloud text refinement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloudTextRefineRequestV1'
+      responses:
+        '200':
+          description: Refined text response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloudTextRefineResponseV1'
+  /api/v1/transcripts/sync:
+    post:
+      operationId: syncTranscriptV1
+      tags:
+        - Sync
+      summary: Synchronize a user-approved transcript entry to the cloud
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptSyncRequestV1'
+      responses:
+        '200':
+          description: Transcript synchronized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptSyncResponseV1'
 components:
   schemas:
     ServiceHealthStatus:
@@ -86,3 +168,110 @@ components:
           example: '2026-10-21T17:30:00Z'
         postgresMode:
           $ref: '#/components/schemas/DatabaseConfigurationMode'
+    CloudTranscriptionResponseV1:
+      type: object
+      required:
+        - transcript
+        - providerId
+        - contractVersion
+      properties:
+        transcript:
+          type: string
+        providerId:
+          type: string
+          example: flowpilot-cloud-openai
+        language:
+          type:
+            - string
+            - 'null'
+        contractVersion:
+          type: string
+          example: v1
+    CloudTextRefineRequestV1:
+      type: object
+      required:
+        - originalTranscript
+        - outputMode
+      properties:
+        originalTranscript:
+          type: string
+        outputMode:
+          type: string
+          enum:
+            - raw
+            - clean
+            - professional
+            - coding-prompt
+            - quick-note
+    CloudTextRefineResponseV1:
+      type: object
+      required:
+        - refinedText
+        - outputMode
+        - providerId
+        - contractVersion
+      properties:
+        refinedText:
+          type: string
+        outputMode:
+          type: string
+        providerId:
+          type: string
+        contractVersion:
+          type: string
+    TranscriptSyncRequestV1:
+      type: object
+      required:
+        - id
+        - originalTranscript
+        - refinedTranscript
+        - editedText
+        - outputMode
+        - providerId
+        - durationMs
+        - createdAtUtc
+      properties:
+        id:
+          type: string
+        originalTranscript:
+          type: string
+        refinedTranscript:
+          type: string
+        editedText:
+          type: string
+        outputMode:
+          type: string
+        providerId:
+          type: string
+        durationMs:
+          type: integer
+        createdAtUtc:
+          type: string
+          format: date-time
+    TranscriptSyncResponseV1:
+      type: object
+      required:
+        - syncedId
+        - syncedAtUtc
+        - contractVersion
+      properties:
+        syncedId:
+          type: string
+        syncedAtUtc:
+          type: string
+          format: date-time
+        contractVersion:
+          type: string
+    ApiErrorResponseV1:
+      type: object
+      required:
+        - code
+        - message
+        - recoverable
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        recoverable:
+          type: boolean

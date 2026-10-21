@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrowserMediaAudioCaptureService } from './dictation/audioCapture.js';
+import {
+  CloudApiSpeechRecognitionProvider,
+  CloudTextRefinementService,
+  syncTranscriptEntryToCloud,
+} from './dictation/cloudSpeechProvider.js';
 import { SystemClipboardService } from './dictation/clipboardService.js';
 import {
   DictationController,
@@ -7,49 +12,81 @@ import {
   type DictationSnapshot,
 } from './dictation/dictationController.js';
 import { LocalDictationHistoryRepository } from './dictation/historyRepository.js';
+import {
+  LocalWhisperModelManager,
+  LocalWhisperSpeechProvider,
+} from './dictation/localWhisperProvider.js';
+import { DictationSettingsRepository } from './dictation/settingsRepository.js';
 import { DeterministicTextRefinementService } from './dictation/textRefinement.js';
-import { OpenAiWhisperTranscriptionProvider } from './dictation/transcriptionProvider.js';
 import {
   OUTPUT_MODES,
   OUTPUT_MODE_LABELS,
+  SUPPORTED_LANGUAGES,
   type DictationHistoryEntry,
+  type LocalWhisperModelId,
+  type LocalWhisperModelStatus,
   type OutputMode,
+  type RefinementProviderMode,
+  type SpeechProviderMode,
+  type TranscriptionLanguage,
 } from './dictation/types.js';
 import { getDesktopStorageStatus, type DesktopStorageStatus } from './tauriBridge.js';
 
 export interface AppProps {
   services?: DictationControllerDependencies;
+  modelManager?: LocalWhisperModelManager;
 }
 
-export function App({ services }: AppProps) {
-  const [runtimeApiKey, setRuntimeApiKey] = useState<string>(() => {
-    const envKey = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
-    return envKey ? envKey.trim() : '';
-  });
-  const apiKeyRef = useRef<string>(runtimeApiKey);
-  apiKeyRef.current = runtimeApiKey;
+export function App({ services, modelManager: injectedModelManager }: AppProps) {
+  const localModelManager = useMemo(() => {
+    return injectedModelManager ?? new LocalWhisperModelManager();
+  }, [injectedModelManager]);
+
+  const selectedModelRef = useRef<LocalWhisperModelId>('tiny.en');
 
   const controller = useMemo(() => {
     if (services) {
       return new DictationController(services);
     }
 
+    const settingsRepo = new DictationSettingsRepository();
+    const initialSettings = settingsRepo.loadSettings();
+    selectedModelRef.current = initialSettings.selectedLocalModelId;
+
+    const localSpeech = new LocalWhisperSpeechProvider({
+      modelManager: localModelManager,
+      getSelectedModelId: () => selectedModelRef.current,
+    });
+    const cloudSpeech = new CloudApiSpeechRecognitionProvider();
+    const localRefiner = new DeterministicTextRefinementService();
+    const cloudRefiner = new CloudTextRefinementService();
+
     return new DictationController({
       audioCapture: new BrowserMediaAudioCaptureService(),
-      provider: new OpenAiWhisperTranscriptionProvider({
-        getApiKey: () => apiKeyRef.current,
-      }),
-      textRefiner: new DeterministicTextRefinementService(),
+      provider: localSpeech,
+      localSpeechProvider: localSpeech,
+      cloudSpeechProvider: cloudSpeech,
+      textRefiner: localRefiner,
+      localTextRefiner: localRefiner,
+      cloudTextRefiner: cloudRefiner,
       clipboard: new SystemClipboardService(),
       historyRepository: new LocalDictationHistoryRepository(),
+      settingsRepository: settingsRepo,
+      syncTranscriptToCloud: (entry) => syncTranscriptEntryToCloud(entry),
     });
-  }, [services]);
+  }, [services, localModelManager]);
 
   const historyRepository = useMemo(() => {
     return services?.historyRepository ?? new LocalDictationHistoryRepository();
   }, [services]);
 
   const [snapshot, setSnapshot] = useState<DictationSnapshot>(() => controller.getSnapshot());
+  selectedModelRef.current = snapshot.settings.selectedLocalModelId;
+
+  const [modelStatus, setModelStatus] = useState<LocalWhisperModelStatus>(() =>
+    localModelManager.getModelStatus(snapshot.settings.selectedLocalModelId),
+  );
+
   const [storageStatus, setStorageStatus] = useState<DesktopStorageStatus>({
     runtime: 'browser-shell',
     sqliteEngine: 'rusqlite (initializing)',
@@ -81,6 +118,10 @@ export function App({ services }: AppProps) {
     void refreshHistory('');
     return unsubscribe;
   }, [controller, refreshHistory]);
+
+  useEffect(() => {
+    setModelStatus(localModelManager.getModelStatus(snapshot.settings.selectedLocalModelId));
+  }, [localModelManager, snapshot.settings.selectedLocalModelId]);
 
   useEffect(() => {
     void refreshHistory(searchQuery);
@@ -121,7 +162,11 @@ export function App({ services }: AppProps) {
     setSaveFeedback(null);
     try {
       await controller.saveCurrentSession();
-      setSaveFeedback('Saved to local history.');
+      setSaveFeedback(
+        snapshot.settings.syncTranscriptsToCloud
+          ? 'Saved locally and synced to cloud.'
+          : 'Saved to local history (offline-only).',
+      );
       await refreshHistory(searchQuery);
     } catch {
       // Error is surfaced through controller snapshot.error
@@ -138,13 +183,30 @@ export function App({ services }: AppProps) {
     controller.updateEditedText(entry.editedText);
   };
 
+  const handleDownloadModel = async () => {
+    const modelId = snapshot.settings.selectedLocalModelId;
+    try {
+      await localModelManager.downloadModel(modelId, (status) => {
+        setModelStatus(status);
+      });
+    } catch {
+      setModelStatus(localModelManager.getModelStatus(modelId));
+    }
+  };
+
+  const handleCancelModelDownload = () => {
+    const modelId = snapshot.settings.selectedLocalModelId;
+    localModelManager.cancelDownload(modelId);
+    setModelStatus(localModelManager.getModelStatus(modelId));
+  };
+
   return (
     <main className="desktop-shell">
       <header className="desktop-header">
         <div>
           <h1>FlowPilot Desktop</h1>
           <p className="subtitle">
-            Personal AI Dictation — Real Audio Capture, Output Modes &amp; Local History
+            Personal AI Dictation — Local whisper.cpp &amp; Cloud Speech with Privacy Controls
           </p>
         </div>
         <div className="header-badges">
@@ -161,6 +223,18 @@ export function App({ services }: AppProps) {
           </span>
         </div>
       </header>
+
+      {/* Explicit Outbound Audio Transfer Notice when Cloud Speech is active */}
+      {snapshot.settings.speechProviderMode === 'cloud' && (
+        <section className="banner banner-info" role="status" data-testid="outbound-audio-notice">
+          <strong>Outbound Audio Notice (Cloud Speech Mode Active)</strong>
+          <p>
+            Captured microphone audio will be transmitted over HTTPS to the configured FlowPilot
+            Cloud Speech API for transcription. Switch Speech Provider to{' '}
+            <strong>Local (whisper.cpp)</strong> to keep all audio on-device.
+          </p>
+        </section>
+      )}
 
       {/* Permission Denied Banner */}
       {snapshot.workflowState === 'permission-denied' && (
@@ -186,7 +260,7 @@ export function App({ services }: AppProps) {
       )}
 
       <div className="workspace-grid">
-        {/* Left Column: Capture Controls & Transcript Editor */}
+        {/* Left Column: Capture Controls, Provider/Privacy Settings & Transcript Editor */}
         <section className="panel" aria-labelledby="dictation-controls-heading">
           <div className="panel-header-row">
             <h2 id="dictation-controls-heading">Dictation Studio</h2>
@@ -207,23 +281,172 @@ export function App({ services }: AppProps) {
             </div>
           </div>
 
-          {/* Provider Configuration */}
-          {!services && (
-            <div className="provider-config-row">
-              <label htmlFor="openai-api-key-input">
-                OpenAI API Key (Whisper-1 Speech Provider)
-              </label>
-              <input
-                id="openai-api-key-input"
-                type="password"
-                className="text-input"
-                placeholder="sk-... (or set VITE_OPENAI_API_KEY in .env)"
-                value={runtimeApiKey}
-                onChange={(e) => setRuntimeApiKey(e.target.value)}
-                autoComplete="off"
-              />
+          {/* Independent Speech, Refinement, Language & Privacy Settings */}
+          <div className="settings-grid" role="group" aria-label="Provider and Privacy Settings">
+            <div className="field-group">
+              <label htmlFor="speech-provider-select">Speech Provider</label>
+              <select
+                id="speech-provider-select"
+                className="select-input"
+                value={snapshot.settings.speechProviderMode}
+                onChange={(e) =>
+                  controller.updateSettings({
+                    speechProviderMode: e.target.value as SpeechProviderMode,
+                  })
+                }
+              >
+                <option value="local">Local (whisper.cpp Offline)</option>
+                <option value="cloud">Cloud (FlowPilot Backend Proxy)</option>
+              </select>
+            </div>
+
+            {snapshot.settings.speechProviderMode === 'local' ? (
+              <div className="field-group">
+                <label htmlFor="local-model-select">Local Whisper Model</label>
+                <select
+                  id="local-model-select"
+                  className="select-input"
+                  value={snapshot.settings.selectedLocalModelId}
+                  onChange={(e) =>
+                    controller.updateSettings({
+                      selectedLocalModelId: e.target.value as LocalWhisperModelId,
+                    })
+                  }
+                >
+                  {localModelManager.listModels().map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.displayName} ({model.sizeMb} MB)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="field-group">
+                <label htmlFor="cloud-provider-select">Configured Cloud Provider</label>
+                <select
+                  id="cloud-provider-select"
+                  className="select-input"
+                  value={snapshot.settings.selectedCloudProviderId}
+                  onChange={(e) =>
+                    controller.updateSettings({
+                      selectedCloudProviderId: e.target.value,
+                    })
+                  }
+                >
+                  <option value="flowpilot-cloud-openai">
+                    FlowPilot Cloud Speech (Server-Managed Credentials)
+                  </option>
+                </select>
+              </div>
+            )}
+
+            <div className="field-group">
+              <label htmlFor="transcription-language-select">Transcription Language</label>
+              <select
+                id="transcription-language-select"
+                className="select-input"
+                value={snapshot.settings.language}
+                onChange={(e) =>
+                  controller.updateSettings({
+                    language: e.target.value as TranscriptionLanguage,
+                  })
+                }
+              >
+                {SUPPORTED_LANGUAGES.map((lang) => (
+                  <option key={lang.code} value={lang.code}>
+                    {lang.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="field-group">
+              <label htmlFor="refinement-provider-select">Text-Refinement Provider</label>
+              <select
+                id="refinement-provider-select"
+                className="select-input"
+                value={snapshot.settings.refinementProviderMode}
+                onChange={(e) =>
+                  controller.updateSettings({
+                    refinementProviderMode: e.target.value as RefinementProviderMode,
+                  })
+                }
+              >
+                <option value="local">Local (On-Device Deterministic)</option>
+                <option value="cloud">Cloud (FlowPilot Refinement API)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Local Model Download & Status Bar */}
+          {snapshot.settings.speechProviderMode === 'local' && (
+            <div className="model-status-box" data-testid="local-model-status-box">
+              <div className="model-status-info">
+                <span>
+                  Model Status ({snapshot.settings.selectedLocalModelId}):{' '}
+                  <strong data-testid="local-model-state">{modelStatus.state}</strong>
+                  {modelStatus.state === 'downloading' && ` (${modelStatus.progressPercent}%)`}
+                </span>
+                {modelStatus.errorMessage && (
+                  <span className="model-error-text">{modelStatus.errorMessage}</span>
+                )}
+              </div>
+              <div className="model-status-actions">
+                {modelStatus.state !== 'ready' && modelStatus.state !== 'downloading' && (
+                  <button
+                    type="button"
+                    className="btn-small"
+                    onClick={() => void handleDownloadModel()}
+                  >
+                    Download Model
+                  </button>
+                )}
+                {modelStatus.state === 'downloading' && (
+                  <button
+                    type="button"
+                    className="btn-small btn-danger"
+                    onClick={handleCancelModelDownload}
+                  >
+                    Cancel Download
+                  </button>
+                )}
+              </div>
             </div>
           )}
+
+          {/* Privacy Checkboxes */}
+          <div className="privacy-toggles-row">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={snapshot.settings.translateToEnglish}
+                onChange={(e) =>
+                  controller.updateSettings({ translateToEnglish: e.target.checked })
+                }
+              />
+              Translate speech to English
+            </label>
+
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={snapshot.settings.syncTranscriptsToCloud}
+                onChange={(e) =>
+                  controller.updateSettings({ syncTranscriptsToCloud: e.target.checked })
+                }
+              />
+              Sync saved transcripts to cloud
+            </label>
+
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={snapshot.settings.retainRecordings}
+                onChange={(e) => controller.updateSettings({ retainRecordings: e.target.checked })}
+              />
+              Retain audio recording in session
+            </label>
+          </div>
 
           {/* Primary Action Toolbar */}
           <div className="control-toolbar" role="group" aria-label="Recording Controls">
@@ -272,7 +495,8 @@ export function App({ services }: AppProps) {
             <div className="empty-box" data-testid="empty-transcript-state">
               <p>
                 No active transcript yet. Click <strong>Start Recording</strong> to capture real
-                microphone audio. Raw audio is discarded immediately after transcription completes.
+                microphone audio. Raw audio is discarded immediately after transcription completes
+                unless recording retention is enabled.
               </p>
             </div>
           ) : (

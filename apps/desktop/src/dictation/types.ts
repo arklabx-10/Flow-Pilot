@@ -8,8 +8,14 @@ export type DictationErrorCode =
   | 'PROVIDER_UNCONFIGURED'
   | 'PROVIDER_AUTH_FAILED'
   | 'PROVIDER_RATE_LIMITED'
+  | 'PROVIDER_TIMEOUT'
+  | 'USAGE_LIMIT_EXCEEDED'
   | 'PROVIDER_NETWORK_ERROR'
   | 'PROVIDER_INVALID_RESPONSE'
+  | 'MODEL_NOT_DOWNLOADED'
+  | 'MODEL_DOWNLOAD_FAILED'
+  | 'MODEL_LOAD_FAILED'
+  | 'LOCAL_ENGINE_UNAVAILABLE'
   | 'REFINEMENT_FAILED'
   | 'CLIPBOARD_FAILED'
   | 'STORAGE_FAILED';
@@ -44,6 +50,59 @@ export const OUTPUT_MODE_LABELS: Readonly<Record<OutputMode, string>> = {
   'quick-note': 'Quick Note',
 };
 
+export type SpeechProviderMode = 'local' | 'cloud';
+export type RefinementProviderMode = 'local' | 'cloud';
+
+export type LocalWhisperModelId = 'tiny.en' | 'tiny' | 'base.en' | 'base' | 'small.en';
+
+export type LocalModelState = 'not-downloaded' | 'downloading' | 'ready' | 'loading' | 'error';
+
+export interface LocalWhisperModelDescriptor {
+  id: LocalWhisperModelId;
+  displayName: string;
+  fileName: string;
+  sizeMb: number;
+  estimatedRamMb: number;
+  multilingual: boolean;
+  license: 'MIT';
+  downloadUrl: string;
+}
+
+export interface LocalWhisperModelStatus {
+  modelId: LocalWhisperModelId;
+  state: LocalModelState;
+  progressPercent: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  errorMessage: string | null;
+}
+
+export type TranscriptionLanguage = 'auto' | 'en' | 'es' | 'fr' | 'de' | 'ur' | 'ja';
+
+export const SUPPORTED_LANGUAGES: ReadonlyArray<{
+  code: TranscriptionLanguage;
+  label: string;
+}> = [
+  { code: 'auto', label: 'Auto-Detect' },
+  { code: 'en', label: 'English (en)' },
+  { code: 'es', label: 'Spanish (es)' },
+  { code: 'fr', label: 'French (fr)' },
+  { code: 'de', label: 'German (de)' },
+  { code: 'ur', label: 'Urdu (ur)' },
+  { code: 'ja', label: 'Japanese (ja)' },
+];
+
+export interface DictationSettings {
+  speechProviderMode: SpeechProviderMode;
+  selectedLocalModelId: LocalWhisperModelId;
+  selectedCloudProviderId: string;
+  language: TranscriptionLanguage;
+  translateToEnglish: boolean;
+  refinementProviderMode: RefinementProviderMode;
+  syncTranscriptsToCloud: boolean;
+  retainRecordings: boolean;
+}
+
 export type DictationWorkflowState =
   | 'idle'
   | 'requesting-permission'
@@ -77,11 +136,13 @@ export interface AudioCaptureService {
 export interface TranscriptionOptions {
   signal?: AbortSignal;
   language?: string;
+  translateToEnglish?: boolean;
 }
 
-export interface TranscriptionProvider {
+export interface ISpeechRecognitionProvider {
   readonly id: string;
   readonly displayName: string;
+  readonly requiresOutboundAudioTransfer?: boolean;
   isConfigured(): boolean;
   transcribe(
     audio: RecordedAudioPayload,
@@ -89,12 +150,10 @@ export interface TranscriptionProvider {
   ): Promise<TranscriptionResult>;
 }
 
-/**
- * Documented extension contract for future providers (e.g. local whisper.cpp,
- * Azure AI Speech, Deepgram) in subsequent phases.
- */
+export type TranscriptionProvider = ISpeechRecognitionProvider;
+
 export interface TranscriptionProviderRegistry {
-  getActiveProvider(): TranscriptionProvider;
+  getActiveProvider(): ISpeechRecognitionProvider;
   listAvailableProviders(): ReadonlyArray<{
     id: string;
     displayName: string;
