@@ -1,0 +1,68 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build & distribution outputs
+dist/
+build/
+out/
+coverage/
+*.tsbuildinfo
+
+# .NET build outputs
+bin/
+obj/
+TestResults/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+
+# Rust / Tauri build outputs
+target/
+Cargo.lock
+gen/schemas/
+
+# Local databases & SQLite artifacts
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Secrets & local environment overrides (NEVER commit real secrets)
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+appsettings.Production.json
+
+# Speech models & user audio artifacts (NEVER commit models or audio)
+*.bin
+*.gguf
+*.onnx
+*.pt
+*.pth
+*.safetensors
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.flac
+*.webm
+*.opus
+models/
+recordings/
+audio-captures/
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json

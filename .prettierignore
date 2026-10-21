@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+coverage/
+bin/
+obj/
+target/
+package-lock.json
+*.slnx
+*.sln

@@ -1,0 +1,42 @@
+{
+  "name": "flowpilot-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FlowPilot — Personal AI dictation desktop and web companion monorepo",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "workspaces": [
+    "packages/contracts",
+    "apps/web",
+    "apps/desktop"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=@flowpilot/contracts && npm run build --workspace=@flowpilot/web && npm run build --workspace=@flowpilot/desktop",
+    "build:api": "dotnet build FlowPilot.slnx --configuration Release",
+    "dev:web": "npm run dev --workspace=@flowpilot/web",
+    "dev:desktop": "npm run dev --workspace=@flowpilot/desktop",
+    "dev:api": "dotnet run --project services/api/src/FlowPilot.Api/FlowPilot.Api.csproj",
+    "format": "prettier --write \"**/*.{ts,tsx,mts,mjs,json,yaml,yml,md,css,html}\" && dotnet format FlowPilot.slnx",
+    "format:check": "prettier --check \"**/*.{ts,tsx,mts,mjs,json,yaml,yml,md,css,html}\" && dotnet format FlowPilot.slnx --verify-no-changes",
+    "lint": "eslint .",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:api": "dotnet test FlowPilot.slnx --configuration Release",
+    "test:all": "npm run test && npm run test:api",
+    "check:env": "node scripts/check-env.mjs",
+    "verify": "node scripts/verify.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@types/node": "^22.13.10",
+    "eslint": "^9.22.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.26.0"
+  }
+}

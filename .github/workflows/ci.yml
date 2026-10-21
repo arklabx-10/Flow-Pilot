@@ -1,0 +1,103 @@
+name: FlowPilot CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+
+jobs:
+  js-and-contracts:
+    name: Contracts, Web & Desktop Frontend (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build @flowpilot/contracts
+        run: npm --workspace=@flowpilot/contracts run build
+
+      - name: Check Prettier formatting
+        run: npx prettier --check "**/*.{ts,tsx,mts,mjs,json,yaml,yml,md,css,html}"
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Run Vitest unit tests
+        run: npm run test
+
+      - name: Build web and desktop frontend bundles
+        run: npm run build
+
+  dotnet-api:
+    name: ASP.NET Core Web API (.NET 10 LTS)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10 LTS
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore dependencies
+        run: dotnet restore FlowPilot.slnx
+
+      - name: Verify C# formatting
+        run: dotnet format FlowPilot.slnx --verify-no-changes --no-restore
+
+      - name: Build API solution
+        run: dotnet build FlowPilot.slnx --configuration Release --no-restore
+
+      - name: Run API integration tests
+        run: dotnet test FlowPilot.slnx --configuration Release --no-build --verbosity normal
+
+  tauri-desktop-rust:
+    name: Desktop Tauri 2 Rust Crate (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'apps/desktop/src-tauri -> target'
+
+      - name: Install JS dependencies and build desktop frontend dist
+        run: |
+          npm ci
+          npm run build
+
+      - name: Run Rust unit tests (including SQLite schema bootstrap)
+        working-directory: apps/desktop/src-tauri
+        run: cargo test

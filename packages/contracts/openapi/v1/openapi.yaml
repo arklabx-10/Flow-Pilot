@@ -1,0 +1,88 @@
+openapi: 3.1.0
+info:
+  title: FlowPilot API
+  version: 1.0.0
+  summary: Shared backend API for FlowPilot desktop and web companion clients.
+  description: >
+    Explicit, versioned HTTP contract for FlowPilot account synchronization,
+    health probes, and companion web operations. Desktop-local offline dictation
+    storage is persisted locally in SQLite and synchronized via versioned endpoints.
+  contact:
+    name: FlowPilot Architecture Team
+servers:
+  - url: http://localhost:5080
+    description: Local development server
+tags:
+  - name: Health
+    description: Service health and readiness probes
+paths:
+  /health:
+    get:
+      operationId: getHealthProbe
+      tags:
+        - Health
+      summary: Infrastructure health probe
+      description: Returns the current health status of the FlowPilot API service without requiring authentication.
+      responses:
+        '200':
+          description: Service is healthy and ready to accept requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatusResponseV1'
+  /api/v1/health:
+    get:
+      operationId: getHealthV1
+      tags:
+        - Health
+      summary: Versioned v1 health and storage readiness status
+      description: Returns versioned API health metadata, contract version, and storage configuration readiness.
+      responses:
+        '200':
+          description: Versioned health response payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatusResponseV1'
+components:
+  schemas:
+    ServiceHealthStatus:
+      type: string
+      enum:
+        - Healthy
+        - Degraded
+        - Unhealthy
+      description: Overall health status indicator.
+    DatabaseConfigurationMode:
+      type: string
+      enum:
+        - Configured
+        - Unconfigured
+      description: Indicates whether shared PostgreSQL connection settings are configured.
+    HealthStatusResponseV1:
+      type: object
+      required:
+        - status
+        - service
+        - contractVersion
+        - environment
+        - timestampUtc
+        - postgresMode
+      properties:
+        status:
+          $ref: '#/components/schemas/ServiceHealthStatus'
+        service:
+          type: string
+          example: flowpilot-api
+        contractVersion:
+          type: string
+          example: v1
+        environment:
+          type: string
+          example: Development
+        timestampUtc:
+          type: string
+          format: date-time
+          example: '2026-10-21T17:30:00Z'
+        postgresMode:
+          $ref: '#/components/schemas/DatabaseConfigurationMode'
