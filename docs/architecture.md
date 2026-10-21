@@ -68,7 +68,20 @@ All HTTP communication between `apps/desktop`, `apps/web`, and `services/api` is
 
 ---
 
-## 4. Independent Buildability
+## 4. Desktop Dictation Vertical Slice Architecture
+
+Inside `apps/desktop/src/dictation`, responsibilities are strictly isolated behind typed interfaces (`types.ts`):
+
+- **Audio Capture (`audioCapture.ts`)**: `BrowserMediaAudioCaptureService` requests microphone access (`getUserMedia`), records audio via `MediaRecorder`, stops hardware tracks immediately upon completion or cancellation, and never retains or persists raw audio buffers after transcription completes.
+- **Speech Provider (`transcriptionProvider.ts`)**: `TranscriptionProvider` defines the provider-agnostic transcription contract with `AbortSignal` cancellation support. Phase 2 implements `OpenAiWhisperTranscriptionProvider` (`whisper-1` via `https://api.openai.com/v1/audio/transcriptions`) and documents `TranscriptionProviderRegistry` for adding future providers (e.g., local `whisper.cpp`, Azure AI Speech, Deepgram) without coupling UI components to provider SDKs.
+- **Text Refinement (`textRefinement.ts`)**: `DeterministicTextRefinementService` transforms transcripts into five output modes (**Raw Transcription**, **Clean Text**, **Professional Message**, **Coding Prompt**, and **Quick Note**) while always preserving `originalTranscript` separately from `refinedTranscript` and `editedText`.
+- **Clipboard (`clipboardService.ts`)**: `SystemClipboardService` copies edited text to the Windows clipboard with explicit failure handling (`CLIPBOARD_FAILED`).
+- **History Persistence (`historyRepository.ts` & `src-tauri/src/db.rs`)**: `LocalDictationHistoryRepository` persists transcripts (original, refined, and edited text—never raw audio) to bundled SQLite via Tauri commands (`save_dictation_entry`, `list_dictation_history`, `delete_dictation_entry`) or browser local storage when running in the Vite development shell.
+- **Workflow Controller (`dictationController.ts`)**: Manages deterministic state transitions (`idle`, `requesting-permission`, `permission-denied`, `recording`, `stopping`, `processing`, `cancelled`, `success`, `error`) and propagates `AbortController` cancellation across async operations.
+
+---
+
+## 5. Independent Buildability
 
 Each workspace in the monorepo is designed to build and test independently:
 
