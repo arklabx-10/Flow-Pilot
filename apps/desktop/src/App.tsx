@@ -12,11 +12,17 @@ import {
   type DictationSnapshot,
 } from './dictation/dictationController.js';
 import { LocalDictationHistoryRepository } from './dictation/historyRepository.js';
+import type { NoteRecordV1 } from '@flowpilot/contracts';
 import {
   LocalWhisperModelManager,
   LocalWhisperSpeechProvider,
 } from './dictation/localWhisperProvider.js';
 import { DictationSettingsRepository } from './dictation/settingsRepository.js';
+import {
+  DesktopSyncEngine,
+  type DesktopSyncStatus,
+  type TranscriptConflictItem,
+} from './dictation/syncEngine.js';
 import { DeterministicTextRefinementService } from './dictation/textRefinement.js';
 import {
   OUTPUT_MODES,
@@ -35,12 +41,25 @@ import { getDesktopStorageStatus, type DesktopStorageStatus } from './tauriBridg
 export interface AppProps {
   services?: DictationControllerDependencies;
   modelManager?: LocalWhisperModelManager;
+  syncEngine?: DesktopSyncEngine;
 }
 
-export function App({ services, modelManager: injectedModelManager }: AppProps) {
+export function App({
+  services,
+  modelManager: injectedModelManager,
+  syncEngine: injectedSyncEngine,
+}: AppProps) {
   const localModelManager = useMemo(() => {
     return injectedModelManager ?? new LocalWhisperModelManager();
   }, [injectedModelManager]);
+
+  const historyRepository = useMemo(() => {
+    return services?.historyRepository ?? new LocalDictationHistoryRepository();
+  }, [services]);
+
+  const syncEngine = useMemo(() => {
+    return injectedSyncEngine ?? new DesktopSyncEngine({ historyRepository });
+  }, [injectedSyncEngine, historyRepository]);
 
   const selectedModelRef = useRef<LocalWhisperModelId>('tiny.en');
 
@@ -70,15 +89,15 @@ export function App({ services, modelManager: injectedModelManager }: AppProps) 
       localTextRefiner: localRefiner,
       cloudTextRefiner: cloudRefiner,
       clipboard: new SystemClipboardService(),
-      historyRepository: new LocalDictationHistoryRepository(),
+      historyRepository,
       settingsRepository: settingsRepo,
-      syncTranscriptToCloud: (entry) => syncTranscriptEntryToCloud(entry),
+      syncTranscriptToCloud: async (entry) => {
+        await syncEngine.enqueueTranscriptUpsert(entry);
+        await syncEngine.syncNow({ syncEnabled: true });
+        await syncTranscriptEntryToCloud(entry);
+      },
     });
-  }, [services, localModelManager]);
-
-  const historyRepository = useMemo(() => {
-    return services?.historyRepository ?? new LocalDictationHistoryRepository();
-  }, [services]);
+  }, [services, localModelManager, historyRepository, syncEngine]);
 
   const [snapshot, setSnapshot] = useState<DictationSnapshot>(() => controller.getSnapshot());
   selectedModelRef.current = snapshot.settings.selectedLocalModelId;
@@ -99,6 +118,19 @@ export function App({ services, modelManager: injectedModelManager }: AppProps) 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
+  const [syncStatus, setSyncStatus] = useState<DesktopSyncStatus>(() => syncEngine.getStatus());
+  const [conflicts, setConflicts] = useState<TranscriptConflictItem[]>([]);
+  const [syncedNotes, setSyncedNotes] = useState<NoteRecordV1[]>(() =>
+    syncEngine.listSyncedNotes(),
+  );
+
+  const refreshSyncState = useCallback(async () => {
+    const conflictList = await syncEngine.listConflicts();
+    setConflicts(conflictList);
+    setSyncedNotes(syncEngine.listSyncedNotes());
+    setSyncStatus(syncEngine.getStatus());
+  }, [syncEngine]);
+
   const refreshHistory = useCallback(
     async (query: string) => {
       setHistoryLoading(true);
@@ -116,8 +148,9 @@ export function App({ services, modelManager: injectedModelManager }: AppProps) 
     const unsubscribe = controller.subscribe(setSnapshot);
     void getDesktopStorageStatus().then(setStorageStatus);
     void refreshHistory('');
+    void refreshSyncState();
     return unsubscribe;
-  }, [controller, refreshHistory]);
+  }, [controller, refreshHistory, refreshSyncState]);
 
   useEffect(() => {
     setModelStatus(localModelManager.getModelStatus(snapshot.settings.selectedLocalModelId));
@@ -200,6 +233,26 @@ export function App({ services, modelManager: injectedModelManager }: AppProps) 
     setModelStatus(localModelManager.getModelStatus(modelId));
   };
 
+  const handleSyncNow = async () => {
+    await syncEngine.syncNow({
+      syncEnabled: snapshot.settings.syncTranscriptsToCloud,
+      forceIgnoreBackoff: true,
+    });
+    await refreshSyncState();
+    await refreshHistory(searchQuery);
+  };
+
+  const handleKeepLocalConflict = async (entityId: string) => {
+    await syncEngine.resolveConflictKeepLocal(entityId);
+    await handleSyncNow();
+  };
+
+  const handleAcceptServerConflict = async (entityId: string) => {
+    await syncEngine.resolveConflictAcceptServer(entityId);
+    await refreshSyncState();
+    await refreshHistory(searchQuery);
+  };
+
   return (
     <main className="desktop-shell">
       <header className="desktop-header">
@@ -232,6 +285,18 @@ export function App({ services, modelManager: injectedModelManager }: AppProps) 
             Captured microphone audio will be transmitted over HTTPS to the configured FlowPilot
             Cloud Speech API for transcription. Switch Speech Provider to{' '}
             <strong>Local (whisper.cpp)</strong> to keep all audio on-device.
+          </p>
+        </section>
+      )}
+
+      {/* Explicit Opt-In Cloud Synchronization Disclosure */}
+      {snapshot.settings.syncTranscriptsToCloud && (
+        <section className="banner banner-info" role="status" data-testid="sync-disclosure-banner">
+          <strong>Opt-In Cloud Synchronization Active (What Leaves This Device)</strong>
+          <p>
+            Only saved transcript text, refined/edited text, output mode, duration metadata, and
+            your device identifier leave this device to sync with your authenticated FlowPilot
+            account. <strong>Raw microphone audio is never uploaded during history sync.</strong>
           </p>
         </section>
       )}
@@ -636,6 +701,84 @@ export function App({ services, modelManager: injectedModelManager }: AppProps) 
                 </li>
               ))}
             </ul>
+          )}
+
+          {/* Cloud Synchronization Status, Conflict Resolution, and Synced Web Notes */}
+          {snapshot.settings.syncTranscriptsToCloud && (
+            <div className="sync-panel-box" data-testid="desktop-sync-panel">
+              <div className="panel-header-row">
+                <h3>Cloud Sync &amp; Shared Notes</h3>
+                <button type="button" className="btn-small" onClick={() => void handleSyncNow()}>
+                  Sync Now
+                </button>
+              </div>
+              <p className="storage-meta" data-testid="desktop-sync-status-text">
+                Sync Status: <strong>{syncStatus.state}</strong> | Pending Queue:{' '}
+                {syncStatus.pendingCount}
+              </p>
+
+              {syncStatus.lastErrorMessage && (
+                <p className="model-error-text" role="alert">
+                  {syncStatus.lastErrorMessage}
+                </p>
+              )}
+
+              {conflicts.length > 0 && (
+                <div className="conflict-list" data-testid="desktop-conflict-list">
+                  <strong>Concurrent Edit Conflicts Detected</strong>
+                  {conflicts.map((conflict) => (
+                    <div key={conflict.queueItemId} className="history-item">
+                      <p>
+                        <strong>Local Edit:</strong> {conflict.localPayload.editedText}
+                      </p>
+                      <p>
+                        <strong>Server (v{conflict.serverVersion}):</strong>{' '}
+                        {conflict.serverRecord.editedText}
+                      </p>
+                      <div className="history-item-actions">
+                        <button
+                          type="button"
+                          className="btn-small"
+                          onClick={() => void handleKeepLocalConflict(conflict.entityId)}
+                        >
+                          Keep Local Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-small btn-secondary"
+                          onClick={() => void handleAcceptServerConflict(conflict.entityId)}
+                        >
+                          Accept Server Version
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="synced-notes-section" data-testid="desktop-synced-notes">
+                <h4>Synced Notes from Web Companion ({syncedNotes.length})</h4>
+                {syncedNotes.length === 0 ? (
+                  <p className="storage-meta">
+                    No cloud notes synced yet. Notes saved in the Web Companion appear here after
+                    synchronization.
+                  </p>
+                ) : (
+                  <ul className="history-list">
+                    {syncedNotes.map((note) => (
+                      <li key={note.id} className="history-item">
+                        <div className="history-item-header">
+                          <span className="mode-tag">{note.folder}</span>
+                          <span className="timestamp">v{note.version}</span>
+                        </div>
+                        <strong>{note.title}</strong>
+                        <p className="history-edited-text">{note.content}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
           )}
         </section>
       </div>

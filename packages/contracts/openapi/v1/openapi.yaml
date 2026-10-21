@@ -4,9 +4,10 @@ info:
   version: 1.0.0
   summary: Shared backend API for FlowPilot desktop and web companion clients.
   description: >
-    Explicit, versioned HTTP contract for FlowPilot account synchronization,
-    cloud speech transcription proxy (keeping privileged provider keys on the backend),
-    cloud text refinement, and health probes.
+    Explicit, versioned HTTP contract for FlowPilot account authentication,
+    devices, shared history synchronization (transcripts & notes with optimistic
+    version concurrency), prompt templates, processing preferences, cloud speech
+    transcription proxy, and health probes.
   contact:
     name: FlowPilot Architecture Team
 servers:
@@ -15,6 +16,18 @@ servers:
 tags:
   - name: Health
     description: Service health and readiness probes
+  - name: Auth
+    description: User registration, login, logout, and session profile
+  - name: Devices
+    description: Client device registration and inventory
+  - name: Transcripts
+    description: Versioned, paginated, searchable transcripts with conflict detection
+  - name: Notes
+    description: Versioned, paginated, searchable notes with conflict detection
+  - name: Templates
+    description: Custom refinement prompt templates
+  - name: Preferences
+    description: User processing and synchronization preferences
   - name: Speech
     description: Cloud speech recognition and text refinement endpoints
   - name: Sync
@@ -23,10 +36,8 @@ paths:
   /health:
     get:
       operationId: getHealthProbe
-      tags:
-        - Health
+      tags: [Health]
       summary: Infrastructure health probe
-      description: Returns the current health status of the FlowPilot API service without requiring authentication.
       responses:
         '200':
           description: Service is healthy and ready to accept requests.
@@ -37,10 +48,8 @@ paths:
   /api/v1/health:
     get:
       operationId: getHealthV1
-      tags:
-        - Health
+      tags: [Health]
       summary: Versioned v1 health and storage readiness status
-      description: Returns versioned API health metadata, contract version, and storage configuration readiness.
       responses:
         '200':
           description: Versioned health response payload.
@@ -48,15 +57,146 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthStatusResponseV1'
+  /api/v1/auth/register:
+    post:
+      operationId: registerUserV1
+      tags: [Auth]
+      summary: Register a new FlowPilot user account
+      responses:
+        '200':
+          description: Account registered and session issued.
+  /api/v1/auth/login:
+    post:
+      operationId: loginUserV1
+      tags: [Auth]
+      summary: Authenticate user and issue Bearer session token
+      responses:
+        '200':
+          description: Session issued.
+  /api/v1/auth/logout:
+    post:
+      operationId: logoutUserV1
+      tags: [Auth]
+      summary: Revoke current Bearer session token
+      responses:
+        '200':
+          description: Logged out.
+  /api/v1/auth/me:
+    get:
+      operationId: getCurrentUserV1
+      tags: [Auth]
+      summary: Return authenticated user profile
+      responses:
+        '200':
+          description: Authenticated user profile.
+  /api/v1/devices:
+    get:
+      operationId: listDevicesV1
+      tags: [Devices]
+      summary: List user devices
+      responses:
+        '200':
+          description: List of registered user devices.
+    post:
+      operationId: registerDeviceV1
+      tags: [Devices]
+      summary: Register or update a client device
+      responses:
+        '200':
+          description: Registered device record.
+  /api/v1/transcripts:
+    get:
+      operationId: listTranscriptsV1
+      tags: [Transcripts]
+      summary: Paginated, server-side searchable transcript history
+      responses:
+        '200':
+          description: Paginated transcript list.
+  /api/v1/transcripts/{id}:
+    put:
+      operationId: upsertTranscriptV1
+      tags: [Transcripts]
+      summary: Idempotent, version-checked transcript create or update
+      responses:
+        '200':
+          description: Upserted transcript record.
+        '409':
+          description: Optimistic concurrency version conflict detected.
+    delete:
+      operationId: deleteTranscriptV1
+      tags: [Transcripts]
+      summary: Soft delete (tombstone for sync) or permanent purge (?permanent=true)
+      responses:
+        '200':
+          description: Deleted.
+  /api/v1/notes:
+    get:
+      operationId: listNotesV1
+      tags: [Notes]
+      summary: Paginated, server-side searchable saved notes
+      responses:
+        '200':
+          description: Paginated note list.
+  /api/v1/notes/{id}:
+    put:
+      operationId: upsertNoteV1
+      tags: [Notes]
+      summary: Idempotent, version-checked note create or update
+      responses:
+        '200':
+          description: Upserted note record.
+        '409':
+          description: Optimistic concurrency version conflict detected.
+    delete:
+      operationId: deleteNoteV1
+      tags: [Notes]
+      summary: Soft delete or permanent purge (?permanent=true)
+      responses:
+        '200':
+          description: Deleted.
+  /api/v1/prompt-templates:
+    get:
+      operationId: listPromptTemplatesV1
+      tags: [Templates]
+      summary: List user prompt templates
+      responses:
+        '200':
+          description: Prompt templates list.
+  /api/v1/prompt-templates/{id}:
+    put:
+      operationId: upsertPromptTemplateV1
+      tags: [Templates]
+      summary: Create or update a prompt template
+      responses:
+        '200':
+          description: Upserted prompt template.
+    delete:
+      operationId: deletePromptTemplateV1
+      tags: [Templates]
+      summary: Delete a prompt template
+      responses:
+        '200':
+          description: Deleted.
+  /api/v1/preferences:
+    get:
+      operationId: getPreferencesV1
+      tags: [Preferences]
+      summary: Get user processing and sync preferences
+      responses:
+        '200':
+          description: User processing preferences.
+    put:
+      operationId: updatePreferencesV1
+      tags: [Preferences]
+      summary: Update user processing and sync preferences
+      responses:
+        '200':
+          description: Updated preferences.
   /api/v1/speech/transcribe:
     post:
       operationId: transcribeSpeechV1
-      tags:
-        - Speech
+      tags: [Speech]
       summary: Transcribe captured audio via configured cloud speech provider
-      description: >
-        Accepts audio bytes via multipart/form-data and forwards to the server-configured
-        cloud speech recognition provider without exposing privileged API keys to clients.
       responses:
         '200':
           description: Successful cloud transcription response.
@@ -64,35 +204,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CloudTranscriptionResponseV1'
-        '400':
-          description: Empty or invalid audio payload.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponseV1'
-        '413':
-          description: Audio payload exceeds usage/size limit.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponseV1'
-        '429':
-          description: Upstream provider rate limit exceeded.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponseV1'
-        '503':
-          description: Cloud speech provider credentials are not configured on the backend.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiErrorResponseV1'
   /api/v1/text/refine:
     post:
       operationId: refineTextV1
-      tags:
-        - Speech
+      tags: [Speech]
       summary: Refine raw transcript using cloud text refinement
       requestBody:
         required: true
@@ -110,8 +225,7 @@ paths:
   /api/v1/transcripts/sync:
     post:
       operationId: syncTranscriptV1
-      tags:
-        - Sync
+      tags: [Sync]
       summary: Synchronize a user-approved transcript entry to the cloud
       requestBody:
         required: true
@@ -130,17 +244,10 @@ components:
   schemas:
     ServiceHealthStatus:
       type: string
-      enum:
-        - Healthy
-        - Degraded
-        - Unhealthy
-      description: Overall health status indicator.
+      enum: [Healthy, Degraded, Unhealthy]
     DatabaseConfigurationMode:
       type: string
-      enum:
-        - Configured
-        - Unconfigured
-      description: Indicates whether shared PostgreSQL connection settings are configured.
+      enum: [Configured, Unconfigured]
     HealthStatusResponseV1:
       type: object
       required:
@@ -155,61 +262,39 @@ components:
           $ref: '#/components/schemas/ServiceHealthStatus'
         service:
           type: string
-          example: flowpilot-api
         contractVersion:
           type: string
-          example: v1
         environment:
           type: string
-          example: Development
         timestampUtc:
           type: string
           format: date-time
-          example: '2026-10-21T17:30:00Z'
         postgresMode:
           $ref: '#/components/schemas/DatabaseConfigurationMode'
     CloudTranscriptionResponseV1:
       type: object
-      required:
-        - transcript
-        - providerId
-        - contractVersion
+      required: [transcript, providerId, contractVersion]
       properties:
         transcript:
           type: string
         providerId:
           type: string
-          example: flowpilot-cloud-openai
         language:
-          type:
-            - string
-            - 'null'
+          type: [string, 'null']
         contractVersion:
           type: string
-          example: v1
     CloudTextRefineRequestV1:
       type: object
-      required:
-        - originalTranscript
-        - outputMode
+      required: [originalTranscript, outputMode]
       properties:
         originalTranscript:
           type: string
         outputMode:
           type: string
-          enum:
-            - raw
-            - clean
-            - professional
-            - coding-prompt
-            - quick-note
+          enum: [raw, clean, professional, coding-prompt, quick-note]
     CloudTextRefineResponseV1:
       type: object
-      required:
-        - refinedText
-        - outputMode
-        - providerId
-        - contractVersion
+      required: [refinedText, outputMode, providerId, contractVersion]
       properties:
         refinedText:
           type: string
@@ -250,10 +335,7 @@ components:
           format: date-time
     TranscriptSyncResponseV1:
       type: object
-      required:
-        - syncedId
-        - syncedAtUtc
-        - contractVersion
+      required: [syncedId, syncedAtUtc, contractVersion]
       properties:
         syncedId:
           type: string
@@ -264,10 +346,7 @@ components:
           type: string
     ApiErrorResponseV1:
       type: object
-      required:
-        - code
-        - message
-        - recoverable
+      required: [code, message, recoverable]
       properties:
         code:
           type: string

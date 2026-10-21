@@ -72,3 +72,53 @@ This document provides a repeatable, step-by-step manual verification checklist 
    - **Original Verbatim Transcript** and **Editable Output Text** populate accurately.
    - Switching across **Raw Transcription**, **Clean Text**, **Professional Message**, **Coding Prompt**, and **Quick Note** updates the refined output while preserving the original transcript untouched.
    - Clicking **Copy to Clipboard** copies the edited text to the Windows clipboard (`Ctrl+V` in `notepad.exe`), and **Save to History** stores the transcript in searchable local history.
+
+---
+
+## Phase 4: Shared History & Offline Synchronization Tests
+
+### Test Case 4: Opt-In Desktop Transcript to Web Companion Synchronization
+
+1. Start `FlowPilot.Api` (`npm run dev:api`) and `apps/web` (`npm run dev:web` -> `http://localhost:5173`).
+2. On `http://localhost:5173`, register or log in with an account (e.g. `testuser@example.com` / `ValidPass!123`).
+3. Open `FlowPilot Desktop` (`http://localhost:1420`).
+4. Ensure **Sync saved transcripts to cloud** is checked. Observe the **Opt-In Cloud Synchronization Active (What Leaves This Device)** notice explaining that only text/metadata leaves the device, never raw audio.
+5. Record a short phrase on Desktop, edit the text to _"Phase 4 Synchronization Complete"_, and click **Save to History**.
+6. Switch to the Web Companion browser tab and navigate to **Transcript History**.
+7. **Expected Result**:
+   - The desktop transcript _"Phase 4 Synchronization Complete"_ appears in the Web Companion transcript list, stamped with the Windows device ID and version 1.
+   - Searching for _"Synchronization"_ filters the list server-side.
+
+### Test Case 5: Web Companion Saved Note to Desktop Synchronization
+
+1. On the Web Companion (`http://localhost:5173`), navigate to the **Saved Notes** tab.
+2. Create a note:
+   - Title: _"Sprint Architecture Note from Web"_
+   - Folder: _"Sprint Planning"_
+   - Content: _"Created in authenticated web companion to verify desktop sync."_
+3. Click **Save Note**.
+4. In FlowPilot Desktop (`http://localhost:1420`), locate the **Cloud Sync & Shared Notes** section and click **Sync Now**.
+5. **Expected Result**:
+   - The note _"Sprint Architecture Note from Web"_ appears under **Synced Notes from Web Companion** on the Desktop interface.
+
+### Test Case 6: Offline Queueing, Disconnection, Reconnection & Idempotency
+
+1. On the Desktop client, save a transcript while the API server is stopped or with network disconnected.
+2. **Expected Result**:
+   - The transcript is immediately saved to local SQLite history (zero UI blocking).
+   - Sync status transitions to `offline-retry` with an exponential backoff schedule.
+3. Restart `FlowPilot.Api` and click **Sync Now**.
+4. **Expected Result**:
+   - The item is successfully delivered using its persistent `idempotencyKey`.
+   - Repeated sync attempts do not duplicate records on the server.
+
+### Test Case 7: Concurrent Version Conflict Detection & Resolution
+
+1. Edit a transcript in Web Companion to increment its server version to 2.
+2. From Desktop with stale version 1, attempt an offline edit.
+3. Trigger sync:
+4. **Expected Result**:
+   - Server returns HTTP 409 (`VERSION_CONFLICT`).
+   - The Desktop client flags a **Concurrent Edit Conflict** and presents two choices:
+     - **Keep Local Edit**: Rebases local changes onto the server version and pushes version 3.
+     - **Accept Server Version**: Replaces local edit with the latest remote version without data loss.

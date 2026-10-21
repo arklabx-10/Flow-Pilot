@@ -21,3 +21,27 @@ export {
   type TranscriptSyncRequestV1,
   type TranscriptSyncResponseV1,
 } from './v1/speech.js';
+
+export {
+  ACCOUNT_SYNC_PATHS_V1,
+  isAuthSessionResponseV1,
+  isPaginatedListResponseV1,
+  isSyncConflictResponseV1,
+  type AuthSessionResponseV1,
+  type DeviceRecordV1,
+  type LoginRequestV1,
+  type NoteRecordV1,
+  type PaginatedListResponseV1,
+  type ProcessingPreferencesRecordV1,
+  type PromptTemplateRecordV1,
+  type RegisterDeviceRequestV1,
+  type RegisterRequestV1,
+  type SyncConflictResponseV1,
+  type SyncItemState,
+  type TranscriptRecordV1,
+  type UpdateProcessingPreferencesRequestV1,
+  type UpsertNoteRequestV1,
+  type UpsertPromptTemplateRequestV1,
+  type UpsertTranscriptRequestV1,
+  type UserProfileV1,
+} from './v1/accountAndSync.js';

@@ -1,6 +1,9 @@
 using FlowPilot.Api.Contracts.V1;
 using FlowPilot.Api.Data;
+using FlowPilot.Api.Endpoints;
+using FlowPilot.Api.Security;
 using FlowPilot.Api.Services;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -9,12 +12,30 @@ builder.Services.AddOpenApi("v1");
 builder.Services.AddHealthChecks();
 builder.Services.AddHttpClient<ISpeechTranscriptionGateway, OpenAiSpeechTranscriptionGateway>();
 
-var postgresConnectionString = builder.Configuration.GetConnectionString("SharedPostgres");
-if (!string.IsNullOrWhiteSpace(postgresConnectionString))
+builder.Services.AddSingleton<FlowPilotTokenService>();
+builder.Services
+    .AddAuthentication(FlowPilotTokenService.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, FlowPilotBearerAuthenticationHandler>(
+        FlowPilotTokenService.SchemeName,
+        _ => { });
+builder.Services.AddAuthorization();
+
+builder.Services.AddDbContext<FlowPilotDbContext>((serviceProvider, options) =>
 {
-    builder.Services.AddDbContext<FlowPilotDbContext>(options =>
-        options.UseNpgsql(postgresConnectionString));
-}
+    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+    var useInMemoryDb = configuration.GetValue<bool?>("Database:UseInMemory") ?? false;
+    var inMemoryName = configuration["Database:InMemoryName"] ?? "FlowPilotLocalDevDb";
+    var postgresConnectionString = configuration.GetConnectionString("SharedPostgres");
+
+    if (useInMemoryDb || string.IsNullOrWhiteSpace(postgresConnectionString))
+    {
+        options.UseInMemoryDatabase(inMemoryName);
+    }
+    else
+    {
+        options.UseNpgsql(postgresConnectionString);
+    }
+});
 
 var allowedOrigins = builder.Configuration
     .GetSection("Cors:AllowedOrigins")
@@ -33,6 +54,8 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 app.UseCors("FlowPilotClients");
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapOpenApi("/openapi/{documentName}.json");
 
 static HealthStatusResponseV1 CreateHealthResponse(IHostEnvironment environment, IConfiguration configuration)
@@ -60,6 +83,8 @@ v1.MapGet("/health", (IHostEnvironment env, IConfiguration config) =>
     .WithName("GetHealthV1")
     .WithSummary("Versioned v1 health and storage readiness status")
     .WithTags("Health");
+
+v1.MapAccountAndSyncEndpoints();
 
 v1.MapPost("/speech/transcribe", async (
         HttpRequest request,

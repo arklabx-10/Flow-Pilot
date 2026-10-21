@@ -1,7 +1,7 @@
 pub mod db;
 pub mod whisper_local;
 
-use db::DictationHistoryRecord;
+use db::{DictationHistoryRecord, OfflineSyncQueueRecord};
 use rusqlite::Connection;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -73,6 +73,38 @@ fn delete_dictation_entry(app_handle: tauri::AppHandle, id: String) -> Result<()
 }
 
 #[tauri::command]
+fn upsert_offline_sync_queue_item(
+    app_handle: tauri::AppHandle,
+    item: OfflineSyncQueueRecord,
+) -> Result<(), String> {
+    let db_path = resolve_sqlite_path(&app_handle);
+    db::initialize_local_sqlite(&db_path).map_err(|e| e.to_string())?;
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    db::upsert_sync_queue_item(&conn, &item).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_offline_sync_queue_items(
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<OfflineSyncQueueRecord>, String> {
+    let db_path = resolve_sqlite_path(&app_handle);
+    db::initialize_local_sqlite(&db_path).map_err(|e| e.to_string())?;
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    db::list_sync_queue_items(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn remove_offline_sync_queue_item(
+    app_handle: tauri::AppHandle,
+    id: String,
+) -> Result<(), String> {
+    let db_path = resolve_sqlite_path(&app_handle);
+    db::initialize_local_sqlite(&db_path).map_err(|e| e.to_string())?;
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+    db::remove_sync_queue_item(&conn, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn check_local_whisper_engine(app_handle: tauri::AppHandle) -> bool {
     let app_dir = resolve_app_dir(&app_handle);
     whisper_local::is_whisper_cli_available(&app_dir)
@@ -108,6 +140,9 @@ pub fn run() {
             save_dictation_entry,
             list_dictation_history,
             delete_dictation_entry,
+            upsert_offline_sync_queue_item,
+            list_offline_sync_queue_items,
+            remove_offline_sync_queue_item,
             check_local_whisper_engine,
             transcribe_local_whisper
         ])

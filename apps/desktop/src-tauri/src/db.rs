@@ -2,7 +2,7 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-pub const LOCAL_SCHEMA_VERSION: u32 = 2;
+pub const LOCAL_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -15,10 +15,50 @@ pub struct DictationHistoryRecord {
     pub provider_id: String,
     pub duration_ms: u64,
     pub created_at_utc: String,
+    #[serde(default)]
+    pub version: i32,
+    #[serde(default = "default_sync_state")]
+    pub sync_state: String,
+}
+
+fn default_sync_state() -> String {
+    "local-only".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct OfflineSyncQueueRecord {
+    pub id: String,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub operation_type: String,
+    pub idempotency_key: String,
+    pub expected_version: i32,
+    pub payload_json: String,
+    pub sync_state: String,
+    pub attempt_count: i32,
+    pub next_retry_at_utc: Option<String>,
+    pub last_error: Option<String>,
+    pub conflict_server_json: Option<String>,
+    pub created_at_utc: String,
+    pub updated_at_utc: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncedNoteRecord {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub folder: String,
+    pub tags_json: String,
+    pub source_transcript_id: Option<String>,
+    pub version: i32,
+    pub updated_at_utc: String,
 }
 
 /// Initializes the local SQLite database used for offline dictation sessions,
-/// user shortcut bindings, and searchable transcript history.
+/// user shortcut bindings, offline sync queue, and searchable transcript history.
 /// Raw audio is intentionally never persisted.
 pub fn initialize_local_sqlite(db_path: &Path) -> Result<u32, rusqlite::Error> {
     let conn = Connection::open(db_path)?;
@@ -37,8 +77,19 @@ pub fn initialize_connection(conn: &Connection) -> Result<(), rusqlite::Error> {
          );
          CREATE TABLE IF NOT EXISTS offline_dictation_queue (
              id TEXT PRIMARY KEY NOT NULL,
+             entity_type TEXT NOT NULL DEFAULT 'transcript',
+             entity_id TEXT NOT NULL DEFAULT '',
+             operation_type TEXT NOT NULL DEFAULT 'upsert',
+             idempotency_key TEXT NOT NULL DEFAULT '',
+             expected_version INTEGER NOT NULL DEFAULT 0,
+             payload_json TEXT NOT NULL DEFAULT '{}',
+             sync_state TEXT NOT NULL,
+             attempt_count INTEGER NOT NULL DEFAULT 0,
+             next_retry_at_utc TEXT NULL,
+             last_error TEXT NULL,
+             conflict_server_json TEXT NULL,
              created_at_utc TEXT NOT NULL,
-             sync_state TEXT NOT NULL
+             updated_at_utc TEXT NOT NULL DEFAULT ''
          );
          CREATE TABLE IF NOT EXISTS dictation_history (
              id TEXT PRIMARY KEY NOT NULL,
@@ -48,7 +99,19 @@ pub fn initialize_connection(conn: &Connection) -> Result<(), rusqlite::Error> {
              output_mode TEXT NOT NULL,
              provider_id TEXT NOT NULL,
              duration_ms INTEGER NOT NULL,
-             created_at_utc TEXT NOT NULL
+             created_at_utc TEXT NOT NULL,
+             version INTEGER NOT NULL DEFAULT 0,
+             sync_state TEXT NOT NULL DEFAULT 'local-only'
+         );
+         CREATE TABLE IF NOT EXISTS synced_notes (
+             id TEXT PRIMARY KEY NOT NULL,
+             title TEXT NOT NULL,
+             content TEXT NOT NULL,
+             folder TEXT NOT NULL,
+             tags_json TEXT NOT NULL,
+             source_transcript_id TEXT NULL,
+             version INTEGER NOT NULL DEFAULT 1,
+             updated_at_utc TEXT NOT NULL
          );",
     )?;
     Ok(())
@@ -67,8 +130,10 @@ pub fn insert_history_entry(
             output_mode,
             provider_id,
             duration_ms,
-            created_at_utc
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            created_at_utc,
+            version,
+            sync_state
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             entry.id,
             entry.original_transcript,
@@ -78,6 +143,8 @@ pub fn insert_history_entry(
             entry.provider_id,
             entry.duration_ms as i64,
             entry.created_at_utc,
+            entry.version,
+            entry.sync_state,
         ],
     )?;
     Ok(())
@@ -101,7 +168,9 @@ pub fn query_history_entries(
             output_mode,
             provider_id,
             duration_ms,
-            created_at_utc
+            created_at_utc,
+            version,
+            sync_state
          FROM dictation_history
          WHERE (?1 IS NULL
             OR LOWER(original_transcript) LIKE ?1
@@ -122,6 +191,8 @@ pub fn query_history_entries(
             provider_id: row.get(5)?,
             duration_ms: duration.max(0) as u64,
             created_at_utc: row.get(7)?,
+            version: row.get(8).unwrap_or(0),
+            sync_state: row.get(9).unwrap_or_else(|_| "local-only".to_string()),
         })
     })?;
 
@@ -134,6 +205,99 @@ pub fn query_history_entries(
 
 pub fn remove_history_entry(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
     conn.execute("DELETE FROM dictation_history WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+pub fn upsert_sync_queue_item(
+    conn: &Connection,
+    item: &OfflineSyncQueueRecord,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "INSERT OR REPLACE INTO offline_dictation_queue (
+            id,
+            entity_type,
+            entity_id,
+            operation_type,
+            idempotency_key,
+            expected_version,
+            payload_json,
+            sync_state,
+            attempt_count,
+            next_retry_at_utc,
+            last_error,
+            conflict_server_json,
+            created_at_utc,
+            updated_at_utc
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        params![
+            item.id,
+            item.entity_type,
+            item.entity_id,
+            item.operation_type,
+            item.idempotency_key,
+            item.expected_version,
+            item.payload_json,
+            item.sync_state,
+            item.attempt_count,
+            item.next_retry_at_utc,
+            item.last_error,
+            item.conflict_server_json,
+            item.created_at_utc,
+            item.updated_at_utc,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn list_sync_queue_items(conn: &Connection) -> Result<Vec<OfflineSyncQueueRecord>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT
+            id,
+            entity_type,
+            entity_id,
+            operation_type,
+            idempotency_key,
+            expected_version,
+            payload_json,
+            sync_state,
+            attempt_count,
+            next_retry_at_utc,
+            last_error,
+            conflict_server_json,
+            created_at_utc,
+            updated_at_utc
+         FROM offline_dictation_queue
+         ORDER BY created_at_utc ASC",
+    )?;
+
+    let rows = stmt.query_map([], |row| {
+        Ok(OfflineSyncQueueRecord {
+            id: row.get(0)?,
+            entity_type: row.get(1)?,
+            entity_id: row.get(2)?,
+            operation_type: row.get(3)?,
+            idempotency_key: row.get(4)?,
+            expected_version: row.get(5)?,
+            payload_json: row.get(6)?,
+            sync_state: row.get(7)?,
+            attempt_count: row.get(8)?,
+            next_retry_at_utc: row.get(9)?,
+            last_error: row.get(10)?,
+            conflict_server_json: row.get(11)?,
+            created_at_utc: row.get(12)?,
+            updated_at_utc: row.get(13)?,
+        })
+    })?;
+
+    let mut results = Vec::new();
+    for item in rows {
+        results.push(item?);
+    }
+    Ok(results)
+}
+
+pub fn remove_sync_queue_item(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
+    conn.execute("DELETE FROM offline_dictation_queue WHERE id = ?1", params![id])?;
     Ok(())
 }
 
@@ -155,6 +319,8 @@ mod tests {
             provider_id: "openai-whisper".to_string(),
             duration_ms: 1900,
             created_at_utc: "2026-10-21T18:00:00Z".to_string(),
+            version: 1,
+            sync_state: "synced".to_string(),
         };
 
         insert_history_entry(&conn, &record).expect("insert should succeed");
@@ -162,6 +328,30 @@ mod tests {
         let found = query_history_entries(&conn, Some("windows")).expect("query should succeed");
         assert_eq!(found.len(), 1);
         assert_eq!(found[0], record);
+
+        let queue_item = OfflineSyncQueueRecord {
+            id: "q-1".to_string(),
+            entity_type: "transcript".to_string(),
+            entity_id: "entry-1".to_string(),
+            operation_type: "upsert".to_string(),
+            idempotency_key: "idem-1".to_string(),
+            expected_version: 0,
+            payload_json: "{\"id\":\"entry-1\"}".to_string(),
+            sync_state: "pending-sync".to_string(),
+            attempt_count: 0,
+            next_retry_at_utc: None,
+            last_error: None,
+            conflict_server_json: None,
+            created_at_utc: "2026-10-21T18:00:00Z".to_string(),
+            updated_at_utc: "2026-10-21T18:00:00Z".to_string(),
+        };
+
+        upsert_sync_queue_item(&conn, &queue_item).expect("queue insert should succeed");
+        let queue_list = list_sync_queue_items(&conn).expect("queue list should succeed");
+        assert_eq!(queue_list.len(), 1);
+        assert_eq!(queue_list[0], queue_item);
+        remove_sync_queue_item(&conn, "q-1").expect("queue remove should succeed");
+        assert!(list_sync_queue_items(&conn).expect("empty queue").is_empty());
 
         remove_history_entry(&conn, "entry-1").expect("delete should succeed");
         let after_delete = query_history_entries(&conn, None).expect("query should succeed");

@@ -91,3 +91,65 @@ Each workspace in the monorepo is designed to build and test independently:
   - The frontend shell (`apps/desktop/src`) builds and tests with Vite + Vitest on any machine with Node.js.
   - The native Windows container (`apps/desktop/src-tauri`) compiles with `cargo` / Tauri CLI and embeds bundled SQLite (`rusqlite`).
 - **`services/api`**: Builds and runs xUnit integration tests via `dotnet test FlowPilot.slnx` without requiring external services or live credentials.
+
+---
+
+## 6. Shared History & Offline Synchronization Architecture (Phase 4)
+
+Phase 4 establishes cross-device sync between Windows Desktop and Web Companion via the ASP.NET Core API and PostgreSQL:
+
+```mermaid
+flowchart TD
+    subgraph DesktopClient["Desktop Client (Tauri / Browser Shell)"]
+        LocalAudio["Microphone Audio"] --> Inference["Local whisper.cpp / Cloud Speech"]
+        Inference --> LocalSQLite[("Desktop SQLite\ndictation_history")]
+        LocalSQLite --> SyncEngine["DesktopSyncEngine\n(Bounded Backoff & Idempotency)"]
+        SyncEngine --> OfflineQueue[("offline_dictation_queue\n(Pending Sync / Retry)")]
+    end
+
+    subgraph CloudAPI["FlowPilot.Api (.NET 10 LTS)"]
+        AuthHandler["Bearer Auth Handler\n(PBKDF2 & HMAC-SHA256)"]
+        SyncController["Account & Sync Endpoints\n(Ownership Check & Version Guard)"]
+        AuthHandler --> SyncController
+    end
+
+    subgraph CloudDB["Shared Cloud Database (PostgreSQL 17)"]
+        PGUsers[("flowpilot.users")]
+        PGTranscripts[("flowpilot.transcripts")]
+        PGNotes[("flowpilot.notes")]
+        PGPrefs[("flowpilot.processing_preferences")]
+        PGTemplates[("flowpilot.prompt_templates")]
+    end
+
+    subgraph WebClient["Web Companion (React 19 + TypeScript)"]
+        WebUI["Web Portal UI\n(Searchable History, Notes, Preferences)"]
+        WebClientAPI["WebApiClient"]
+        WebUI <--> WebClientAPI
+    end
+
+    OfflineQueue -->|"PUT /api/v1/transcripts/{id}\n(Idempotent PUT with ExpectedVersion)"| SyncController
+    SyncController <--> PGTranscripts
+    SyncController <--> PGNotes
+    SyncController <--> PGUsers
+    SyncController <--> PGPrefs
+    SyncController <--> PGTemplates
+    WebClientAPI <-->|"HTTPS / REST (v1)"| SyncController
+    SyncEngine <-->|"Pulls remote notes & transcripts"| SyncController
+```
+
+### Key Synchronization Invariants
+
+1. **Privacy-Preserving Opt-In**:
+   - Synchronization is strictly opt-in (`syncTranscriptsToCloud`).
+   - Only transcript text, mode, duration, and device metadata leave the device. **Raw microphone audio is never synchronized.**
+2. **Optimistic Version Concurrency**:
+   - Each transcript and note carries a monotonically increasing integer `version`.
+   - Updates must specify `expectedVersion`. Concurrent edits yield `HTTP 409 Conflict` with `VERSION_CONFLICT`.
+   - The desktop client provides explicit resolution options: **Keep Local Edit** (rebases onto server version) or **Accept Server Version**.
+3. **Idempotency & Resilient Retry**:
+   - Every mutation payload includes a client-generated UUID `idempotencyKey`.
+   - Duplicate deliveries due to network retries return success with the existing record rather than duplicating entries.
+   - Offline retries use bounded exponential backoff (`min(maxBackoff, baseBackoff * 2^(attempt - 1))`) capped at 30 seconds.
+4. **Deliberate Deletion Policy**:
+   - `DELETE ?permanent=false` soft-deletes with tombstones (`is_deleted = true`, `deleted_at_utc`), allowing multi-device synchronization to detect deleted records.
+   - `DELETE ?permanent=true` executes a hard purge to support personal privacy and compliance deletion.

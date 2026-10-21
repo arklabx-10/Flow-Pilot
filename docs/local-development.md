@@ -128,3 +128,41 @@ Individual commands:
 - **Typecheck workspaces**: `npm run typecheck`
 - **Run Vitest unit tests**: `npm run test`
 - **Run .NET API integration tests**: `npm run test:api`
+
+---
+
+## 6. Phase 4: Shared History, PostgreSQL Migrations & Authentication
+
+### 6.1 Database Migrations (`services/api`)
+
+The ASP.NET Core API uses Entity Framework Core with Npgsql targeting PostgreSQL. The migration history is stored in the `flowpilot` schema:
+
+- Migration file: `services/api/src/FlowPilot.Api/Data/Migrations/20261021000000_InitialSharedHistorySchema.cs`
+- Tables created:
+  - `flowpilot.users`: Account identities and PBKDF2 password hashes.
+  - `flowpilot.devices`: Client devices (Windows Desktop, Web Companion).
+  - `flowpilot.transcripts`: Versioned transcripts with composite indexes on `(user_id, is_deleted, created_at_utc)`.
+  - `flowpilot.notes`: Versioned notes with composite indexes on `(user_id, folder, is_deleted)`.
+  - `flowpilot.prompt_templates`: Custom prompt templates.
+  - `flowpilot.processing_preferences`: User processing preferences.
+
+To apply migrations manually against a running PostgreSQL instance:
+
+```bash
+dotnet ef database update --project services/api/src/FlowPilot.Api/FlowPilot.Api.csproj
+```
+
+In development without PostgreSQL or during testing, the API automatically falls back to the high-performance in-memory provider (`Microsoft.EntityFrameworkCore.InMemory`) so tests and local runs never require live cloud credentials.
+
+### 6.2 Authentication Configuration
+
+- Authentication Scheme: `Bearer` via `FlowPilotBearerAuthenticationHandler`.
+- Token Generation: `FlowPilotTokenService` issues signed HMAC-SHA256 JWT tokens.
+- Secret Key Configuration: `Authentication:TokenSigningKey` in `appsettings.json` (or `.env`).
+- Password Hashing: ASP.NET Core `PasswordHasher<UserEntity>` (PBKDF2 with HMAC-SHA256, 128-bit salt, 10,000 iterations).
+- Token Revocation: Logouts immediately revoke tokens via an in-memory/database `jti` revocation registry.
+
+### 6.3 Deliberate Deletion Policy
+
+- Soft Deletion (`DELETE /api/v1/... ?permanent=false`): Sets `is_deleted = true` and `deleted_at_utc`. The record remains accessible via `?includeDeleted=true` for multi-device sync tombstones.
+- Hard Deletion (`DELETE /api/v1/... ?permanent=true`): Permanently purges user data from the database in compliance with privacy retention requirements.
