@@ -19,6 +19,7 @@
     "dev:web": "npm run dev --workspace=@flowpilot/web",
     "dev:desktop": "npm run dev --workspace=@flowpilot/desktop",
     "dev:api": "dotnet run --project services/api/src/FlowPilot.Api/FlowPilot.Api.csproj",
+    "dev:all": "node scripts/dev-all.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,mts,mjs,json,yaml,yml,md,css,html}\" && dotnet format FlowPilot.slnx",
     "format:check": "prettier --check \"**/*.{ts,tsx,mts,mjs,json,yaml,yml,md,css,html}\" && dotnet format FlowPilot.slnx --verify-no-changes",
     "lint": "eslint .",

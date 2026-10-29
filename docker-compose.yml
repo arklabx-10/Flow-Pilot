@@ -18,6 +18,34 @@ services:
       timeout: 5s
       retries: 10
 
+  api:
+    profiles: ['full-stack']
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    container_name: flowpilot-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__SharedPostgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-flowpilot_dev};Username=${POSTGRES_USER:-flowpilot};Password=${POSTGRES_PASSWORD:-flowpilot_local_dev_only}
+    ports:
+      - '5080:5080'
+
+  web:
+    profiles: ['full-stack']
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: flowpilot-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - '5173:80'
+
 volumes:
   flowpilot_postgres_data:
     name: flowpilot_postgres_data

@@ -4,7 +4,7 @@
 
 ---
 
-## Completed Capabilities (Phases 1–6)
+## Completed Capabilities (Phases 1–7)
 
 1. **Phase 1 — Monorepo & Contract-First Foundation**:
    - Strict workspace boundaries (`apps/desktop`, `apps/web`, `services/api`, `packages/contracts`, `docs`, `scripts`), `AGENTS.md` charter, and self-contained CI verification.
@@ -18,6 +18,8 @@
    - Configurable keyboard shortcuts (`Ctrl+Shift+Space` toggle recording, `Ctrl+Shift+C` copy output, `Escape` cancel), system tray preferences, and cross-device Custom Vocabulary (`/api/v1/vocabulary`) for automatic spoken-to-written term replacement.
 6. **Phase 6 — Usage Telemetry, Personal Data Export/Deletion Compliance & Active-Window Auto-Paste**:
    - Productivity telemetry aggregation (`/api/v1/telemetry/summary` and local desktop productivity metrics), GDPR/privacy JSON personal data export (`/api/v1/account/export`), full account & data purge (`DELETE /api/v1/account`), and Windows active-window auto-paste readiness (`simulate_active_window_paste`).
+7. **Phase 7 — Production Release Packaging, Containerization & Unified Dev Stack Runner**:
+   - Automated Windows `.msi`/`.exe` installer release pipeline (`.github/workflows/release-desktop.yml`), multi-stage production Dockerfiles (`services/api/Dockerfile`, `apps/web/Dockerfile`), full-stack Docker Compose profile (`docker compose --profile full-stack up --build`), and zero-config unified local runner (`npm run dev:all`).
 
 ---
 
@@ -71,7 +73,13 @@ docker compose up -d
 
 ### 5. Run the Applications
 
-Each application can be started independently:
+Launch the entire local stack (`FlowPilot.Api` on `:5080`, `Web Companion` on `:5173`, and `Desktop App UI Shell` on `:1420`) with a single command (automatically falls back to EF Core InMemory if local PostgreSQL on `:5432` is not running):
+
+```bash
+npm run dev:all
+```
+
+Or start each application independently:
 
 - **Backend API (`http://localhost:5080`)**:
 
