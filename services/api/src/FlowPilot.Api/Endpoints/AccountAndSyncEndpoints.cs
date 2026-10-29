@@ -771,6 +771,111 @@ public static class AccountAndSyncEndpoints
             })
             .RequireAuthorization()
             .WithTags("Preferences");
+
+        // --- Custom Vocabulary Endpoints ---
+        v1.MapGet("/vocabulary", async (
+                ClaimsPrincipal principal,
+                FlowPilotDbContext db,
+                CancellationToken ct) =>
+            {
+                var userId = GetRequiredUserId(principal);
+                var items = await db.VocabularyEntries
+                    .Where(v => v.UserId == userId)
+                    .OrderBy(v => v.SpokenPhrase)
+                    .Select(v => new VocabularyEntryRecordV1(
+                        v.Id,
+                        v.UserId,
+                        v.SpokenPhrase,
+                        v.ReplacementTerm,
+                        v.Category,
+                        v.UpdatedAtUtc.ToString("O")))
+                    .ToListAsync(ct);
+
+                return Results.Ok(items);
+            })
+            .RequireAuthorization()
+            .WithTags("Vocabulary");
+
+        v1.MapPut("/vocabulary/{id}", async (
+                string id,
+                UpsertVocabularyEntryRequestV1 request,
+                ClaimsPrincipal principal,
+                FlowPilotDbContext db,
+                CancellationToken ct) =>
+            {
+                var userId = GetRequiredUserId(principal);
+                if (string.IsNullOrWhiteSpace(id)
+                    || string.IsNullOrWhiteSpace(request.SpokenPhrase)
+                    || string.IsNullOrWhiteSpace(request.ReplacementTerm))
+                {
+                    return Results.BadRequest(new ApiErrorResponseV1(
+                        "VALIDATION_FAILED",
+                        "Vocabulary Id, SpokenPhrase, and ReplacementTerm are required.",
+                        true));
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                var existing = await db.VocabularyEntries.FirstOrDefaultAsync(
+                    v => v.UserId == userId && v.Id == id,
+                    ct);
+
+                if (existing is null)
+                {
+                    existing = new VocabularyEntryEntity
+                    {
+                        Id = id,
+                        UserId = userId,
+                        SpokenPhrase = request.SpokenPhrase.Trim(),
+                        ReplacementTerm = request.ReplacementTerm.Trim(),
+                        Category = string.IsNullOrWhiteSpace(request.Category) ? "General" : request.Category.Trim(),
+                        UpdatedAtUtc = now,
+                    };
+                    db.VocabularyEntries.Add(existing);
+                }
+                else
+                {
+                    existing.SpokenPhrase = request.SpokenPhrase.Trim();
+                    existing.ReplacementTerm = request.ReplacementTerm.Trim();
+                    existing.Category = string.IsNullOrWhiteSpace(request.Category)
+                        ? existing.Category
+                        : request.Category.Trim();
+                    existing.UpdatedAtUtc = now;
+                }
+
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new VocabularyEntryRecordV1(
+                    existing.Id,
+                    existing.UserId,
+                    existing.SpokenPhrase,
+                    existing.ReplacementTerm,
+                    existing.Category,
+                    existing.UpdatedAtUtc.ToString("O")));
+            })
+            .RequireAuthorization()
+            .WithTags("Vocabulary");
+
+        v1.MapDelete("/vocabulary/{id}", async (
+                string id,
+                ClaimsPrincipal principal,
+                FlowPilotDbContext db,
+                CancellationToken ct) =>
+            {
+                var userId = GetRequiredUserId(principal);
+                var existing = await db.VocabularyEntries.FirstOrDefaultAsync(
+                    v => v.UserId == userId && v.Id == id,
+                    ct);
+
+                if (existing is null)
+                {
+                    return Results.NotFound();
+                }
+
+                db.VocabularyEntries.Remove(existing);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new { id, deleted = true });
+            })
+            .RequireAuthorization()
+            .WithTags("Vocabulary");
     }
 
     private static string GetRequiredUserId(ClaimsPrincipal principal)

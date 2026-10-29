@@ -43,5 +43,7 @@ export {
   type UpsertNoteRequestV1,
   type UpsertPromptTemplateRequestV1,
   type UpsertTranscriptRequestV1,
+  type UpsertVocabularyEntryRequestV1,
   type UserProfileV1,
+  type VocabularyEntryRecordV1,
 } from './v1/accountAndSync.js';

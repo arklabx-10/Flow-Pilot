@@ -12,12 +12,19 @@ import {
   type DictationSnapshot,
 } from './dictation/dictationController.js';
 import { LocalDictationHistoryRepository } from './dictation/historyRepository.js';
-import type { NoteRecordV1 } from '@flowpilot/contracts';
+import type { NoteRecordV1, VocabularyEntryRecordV1 } from '@flowpilot/contracts';
 import {
   LocalWhisperModelManager,
   LocalWhisperSpeechProvider,
 } from './dictation/localWhisperProvider.js';
 import { DictationSettingsRepository } from './dictation/settingsRepository.js';
+import {
+  CustomVocabularyService,
+  ShortcutPreferencesRepository,
+  applyVocabularyReplacements,
+  matchesHotkeyEvent,
+  type ShortcutPreferences,
+} from './dictation/shortcutsAndVocabulary.js';
 import {
   DesktopSyncEngine,
   type DesktopSyncStatus,
@@ -124,6 +131,19 @@ export function App({
     syncEngine.listSyncedNotes(),
   );
 
+  const shortcutRepo = useMemo(() => new ShortcutPreferencesRepository(), []);
+  const vocabService = useMemo(() => new CustomVocabularyService(), []);
+
+  const [shortcutPrefs, setShortcutPrefs] = useState<ShortcutPreferences>(() =>
+    shortcutRepo.loadPreferences(),
+  );
+  const [vocabEntries, setVocabEntries] = useState<VocabularyEntryRecordV1[]>(() =>
+    vocabService.listEntries(),
+  );
+  const [newSpokenPhrase, setNewSpokenPhrase] = useState<string>('');
+  const [newReplacementTerm, setNewReplacementTerm] = useState<string>('');
+  const newVocabCategory = 'Product';
+
   const refreshSyncState = useCallback(async () => {
     const conflictList = await syncEngine.listConflicts();
     setConflicts(conflictList);
@@ -160,7 +180,7 @@ export function App({
     void refreshHistory(searchQuery);
   }, [searchQuery, refreshHistory]);
 
-  // Accessible keyboard shortcuts: Escape cancels active recording/processing
+  // Accessible keyboard shortcuts: Escape cancels, Toggle Recording & Copy Hotkeys
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -174,6 +194,30 @@ export function App({
           event.preventDefault();
           controller.cancel();
         }
+        return;
+      }
+
+      if (matchesHotkeyEvent(event, shortcutPrefs.toggleRecordingHotkey)) {
+        event.preventDefault();
+        const current = controller.getSnapshot().workflowState;
+        if (current === 'recording') {
+          void controller.stopRecording();
+        } else if (
+          current === 'idle' ||
+          current === 'success' ||
+          current === 'error' ||
+          current === 'cancelled'
+        ) {
+          void controller.startRecording();
+        }
+        return;
+      }
+
+      if (matchesHotkeyEvent(event, shortcutPrefs.copyLastOutputHotkey)) {
+        event.preventDefault();
+        if (controller.getSnapshot().editedText.trim()) {
+          void controller.copyEditedText().catch(() => {});
+        }
       }
     };
 
@@ -181,7 +225,7 @@ export function App({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [controller]);
+  }, [controller, shortcutPrefs]);
 
   const isBusy =
     snapshot.workflowState === 'requesting-permission' ||
@@ -780,6 +824,102 @@ export function App({
               </div>
             </div>
           )}
+
+          {/* Windows Global Shortcuts, System Tray & Custom Vocabulary */}
+          <div className="sync-panel-box" data-testid="desktop-shortcuts-vocab-panel">
+            <h3>Shortcuts, System Tray &amp; Custom Vocabulary</h3>
+            <p className="storage-meta">
+              Toggle Recording: <code>{shortcutPrefs.toggleRecordingHotkey}</code> | Copy Output:{' '}
+              <code>{shortcutPrefs.copyLastOutputHotkey}</code> | Minimize to Tray:{' '}
+              {shortcutPrefs.minimizeToTrayOnClose ? 'Enabled' : 'Disabled'}
+            </p>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={shortcutPrefs.minimizeToTrayOnClose}
+                onChange={(e) => {
+                  const updated = shortcutRepo.updatePreferences({
+                    minimizeToTrayOnClose: e.target.checked,
+                  });
+                  setShortcutPrefs(updated);
+                }}
+              />
+              Minimize to Windows system tray on close
+            </label>
+
+            <div className="search-row" style={{ marginTop: '0.75rem' }}>
+              <label htmlFor="desktop-vocab-spoken">Add Custom Vocabulary Term</label>
+              <div className="history-item-actions">
+                <input
+                  id="desktop-vocab-spoken"
+                  type="text"
+                  className="text-input"
+                  placeholder="Spoken phrase (e.g. flow pilot)"
+                  value={newSpokenPhrase}
+                  onChange={(e) => setNewSpokenPhrase(e.target.value)}
+                />
+                <input
+                  id="desktop-vocab-replacement"
+                  type="text"
+                  className="text-input"
+                  placeholder="Replacement (e.g. FlowPilot)"
+                  aria-label="Replacement term"
+                  value={newReplacementTerm}
+                  onChange={(e) => setNewReplacementTerm(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn-small"
+                  onClick={() => {
+                    if (!newSpokenPhrase.trim() || !newReplacementTerm.trim()) {
+                      return;
+                    }
+                    vocabService.upsertLocalEntry({
+                      spokenPhrase: newSpokenPhrase,
+                      replacementTerm: newReplacementTerm,
+                      category: newVocabCategory,
+                    });
+                    const updatedEntries = vocabService.listEntries();
+                    setVocabEntries(updatedEntries);
+                    setNewSpokenPhrase('');
+                    setNewReplacementTerm('');
+                    if (snapshot.editedText.trim()) {
+                      controller.updateEditedText(
+                        applyVocabularyReplacements(snapshot.editedText, updatedEntries),
+                      );
+                    }
+                  }}
+                >
+                  Add Term
+                </button>
+              </div>
+            </div>
+
+            {vocabEntries.length > 0 && (
+              <ul className="history-list" data-testid="desktop-vocab-list">
+                {vocabEntries.map((voc) => (
+                  <li key={voc.id} className="history-item">
+                    <div className="history-item-header">
+                      <span>
+                        &ldquo;{voc.spokenPhrase}&rdquo; &rarr;{' '}
+                        <strong>{voc.replacementTerm}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        className="btn-small btn-danger"
+                        onClick={() => {
+                          vocabService.deleteLocalEntry(voc.id);
+                          setVocabEntries(vocabService.listEntries());
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </section>
       </div>
     </main>

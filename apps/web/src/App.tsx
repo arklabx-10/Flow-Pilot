@@ -10,13 +10,14 @@ import {
   type ProcessingPreferencesRecordV1,
   type PromptTemplateRecordV1,
   type TranscriptRecordV1,
+  type VocabularyEntryRecordV1,
 } from '@flowpilot/contracts';
 import { WebApiClient } from './apiClient.js';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:5080';
 const WEB_SESSION_STORAGE_KEY = 'flowpilot_web_auth_session_v1';
 
-type WebRouteTab = 'transcripts' | 'notes' | 'templates' | 'preferences';
+type WebRouteTab = 'transcripts' | 'notes' | 'vocabulary' | 'templates' | 'preferences';
 
 export interface AppProps {
   apiBaseUrl?: string;
@@ -98,6 +99,12 @@ export function App({ apiBaseUrl, autoCheckHealth = true, fetchImpl }: AppProps)
   const [templateName, setTemplateName] = useState<string>('');
   const [templateMode, setTemplateMode] = useState<string>('clean');
   const [templateInstructions, setTemplateInstructions] = useState<string>('');
+
+  // Custom Vocabulary state
+  const [vocabList, setVocabList] = useState<VocabularyEntryRecordV1[]>([]);
+  const [vocabSpoken, setVocabSpoken] = useState<string>('');
+  const [vocabReplacement, setVocabReplacement] = useState<string>('');
+  const [vocabCategory, setVocabCategory] = useState<string>('Product');
 
   // Processing Preferences state
   const [preferences, setPreferences] = useState<ProcessingPreferencesRecordV1>({
@@ -331,6 +338,43 @@ export function App({ apiBaseUrl, autoCheckHealth = true, fetchImpl }: AppProps)
     }
   };
 
+  const handleSaveVocab = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!vocabSpoken.trim() || !vocabReplacement.trim()) {
+      return;
+    }
+    setSyncState('syncing');
+    try {
+      const id = createClientRecordId('voc');
+      const saved = await client.upsertVocabulary(id, {
+        spokenPhrase: vocabSpoken.trim(),
+        replacementTerm: vocabReplacement.trim(),
+        category: vocabCategory.trim() || 'Product',
+      });
+      setVocabList((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]);
+      setVocabSpoken('');
+      setVocabReplacement('');
+      setSyncState('synced');
+    } catch (error) {
+      setSyncState('error');
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to save vocabulary entry.');
+    }
+  };
+
+  const handleDeleteVocab = async (id: string) => {
+    setSyncState('syncing');
+    try {
+      await client.deleteVocabulary(id);
+      setVocabList((prev) => prev.filter((item) => item.id !== id));
+      setSyncState('synced');
+    } catch (error) {
+      setSyncState('error');
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Failed to delete vocabulary entry.',
+      );
+    }
+  };
+
   const handleSavePreferences = async (event: React.FormEvent) => {
     event.preventDefault();
     setPreferencesSaved(false);
@@ -506,6 +550,13 @@ export function App({ apiBaseUrl, autoCheckHealth = true, fetchImpl }: AppProps)
               onClick={() => setActiveTab('notes')}
             >
               Saved Notes
+            </button>
+            <button
+              type="button"
+              className={`button ${activeTab === 'vocabulary' ? '' : 'button-secondary'}`}
+              onClick={() => setActiveTab('vocabulary')}
+            >
+              Custom Vocabulary
             </button>
             <button
               type="button"
@@ -736,6 +787,84 @@ export function App({ apiBaseUrl, autoCheckHealth = true, fetchImpl }: AppProps)
                             Delete Note
                           </button>
                         </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'vocabulary' && (
+            <div className="card-grid" data-testid="vocabulary-view">
+              <section className="card">
+                <h2>Add Custom Vocabulary Rule</h2>
+                <form className="form-stack" onSubmit={(e) => void handleSaveVocab(e)}>
+                  <div className="field-row">
+                    <label htmlFor="vocab-spoken-input">Spoken Phrase</label>
+                    <input
+                      id="vocab-spoken-input"
+                      type="text"
+                      className="input"
+                      placeholder="e.g. flow pilot"
+                      value={vocabSpoken}
+                      onChange={(e) => setVocabSpoken(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="field-row">
+                    <label htmlFor="vocab-replacement-input">Replacement Term</label>
+                    <input
+                      id="vocab-replacement-input"
+                      type="text"
+                      className="input"
+                      placeholder="e.g. FlowPilot"
+                      value={vocabReplacement}
+                      onChange={(e) => setVocabReplacement(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="field-row">
+                    <label htmlFor="vocab-category-input">Category</label>
+                    <input
+                      id="vocab-category-input"
+                      type="text"
+                      className="input"
+                      value={vocabCategory}
+                      onChange={(e) => setVocabCategory(e.target.value)}
+                    />
+                  </div>
+                  <button type="submit" className="button">
+                    Save Vocabulary Term
+                  </button>
+                </form>
+              </section>
+
+              <section className="card">
+                <h2>Personal Dictionary ({vocabList.length})</h2>
+                {vocabList.length === 0 ? (
+                  <p style={{ marginTop: '1rem' }}>
+                    No custom vocabulary rules saved yet. Add spoken-to-written replacements to
+                    standardize technical terms across devices.
+                  </p>
+                ) : (
+                  <ul className="record-list" data-testid="web-vocabulary-list">
+                    {vocabList.map((item) => (
+                      <li key={item.id} className="record-item">
+                        <div className="record-meta">
+                          <span className="badge">{item.category}</span>
+                        </div>
+                        <p className="record-primary">
+                          &ldquo;{item.spokenPhrase}&rdquo; &rarr;{' '}
+                          <strong>{item.replacementTerm}</strong>
+                        </p>
+                        <button
+                          type="button"
+                          className="button button-danger"
+                          onClick={() => void handleDeleteVocab(item.id)}
+                        >
+                          Delete Term
+                        </button>
                       </li>
                     ))}
                   </ul>

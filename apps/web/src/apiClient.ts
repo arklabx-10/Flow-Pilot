@@ -13,6 +13,8 @@ import {
   type UpsertNoteRequestV1,
   type UpsertPromptTemplateRequestV1,
   type UpsertTranscriptRequestV1,
+  type UpsertVocabularyEntryRequestV1,
+  type VocabularyEntryRecordV1,
 } from '@flowpilot/contracts';
 
 export class WebApiClient {
@@ -270,6 +272,50 @@ export class WebApiClient {
       throw await this.toError(response, 'Failed to update processing preferences.');
     }
     return (await response.json()) as ProcessingPreferencesRecordV1;
+  }
+
+  public async listVocabulary(): Promise<VocabularyEntryRecordV1[]> {
+    const response = await this.fetchImpl(`${this.baseUrl}${ACCOUNT_SYNC_PATHS_V1.vocabulary}`, {
+      headers: this.authHeaders(),
+    });
+    if (!response.ok) {
+      throw await this.toError(response, 'Failed to load custom vocabulary.');
+    }
+    return (await response.json()) as VocabularyEntryRecordV1[];
+  }
+
+  public async upsertVocabulary(
+    id: string,
+    payload: UpsertVocabularyEntryRequestV1,
+  ): Promise<VocabularyEntryRecordV1> {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}${ACCOUNT_SYNC_PATHS_V1.vocabulary}/${encodeURIComponent(id)}`,
+      {
+        method: 'PUT',
+        headers: {
+          ...this.authHeaders(),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      },
+    );
+    if (!response.ok) {
+      throw await this.toError(response, 'Failed to save custom vocabulary entry.');
+    }
+    return (await response.json()) as VocabularyEntryRecordV1;
+  }
+
+  public async deleteVocabulary(id: string): Promise<void> {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}${ACCOUNT_SYNC_PATHS_V1.vocabulary}/${encodeURIComponent(id)}`,
+      {
+        method: 'DELETE',
+        headers: this.authHeaders(),
+      },
+    );
+    if (!response.ok) {
+      throw await this.toError(response, 'Failed to delete custom vocabulary entry.');
+    }
   }
 
   private authHeaders(): Record<string, string> {

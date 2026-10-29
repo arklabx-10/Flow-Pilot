@@ -78,3 +78,13 @@ public sealed class ProcessingPreferenceEntity
     public required int Version { get; set; }
     public required DateTimeOffset UpdatedAtUtc { get; set; }
 }
+
+public sealed class VocabularyEntryEntity
+{
+    public required string Id { get; set; }
+    public required string UserId { get; set; }
+    public required string SpokenPhrase { get; set; }
+    public required string ReplacementTerm { get; set; }
+    public required string Category { get; set; }
+    public required DateTimeOffset UpdatedAtUtc { get; set; }
+}

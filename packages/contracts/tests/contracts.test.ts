@@ -157,5 +157,6 @@ describe('@flowpilot/contracts v1', () => {
     expect(parsed.paths).toHaveProperty(ACCOUNT_SYNC_PATHS_V1.notes);
     expect(parsed.paths).toHaveProperty(ACCOUNT_SYNC_PATHS_V1.promptTemplates);
     expect(parsed.paths).toHaveProperty(ACCOUNT_SYNC_PATHS_V1.preferences);
+    expect(parsed.paths).toHaveProperty(ACCOUNT_SYNC_PATHS_V1.vocabulary);
   });
 });

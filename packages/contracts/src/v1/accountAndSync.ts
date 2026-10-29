@@ -15,6 +15,7 @@ export const ACCOUNT_SYNC_PATHS_V1 = {
   notes: '/api/v1/notes',
   promptTemplates: '/api/v1/prompt-templates',
   preferences: '/api/v1/preferences',
+  vocabulary: '/api/v1/vocabulary',
 } as const;
 
 export type SyncItemState =
@@ -161,6 +162,21 @@ export interface UpdateProcessingPreferencesRequestV1 {
   autoCopyToClipboard: boolean;
   syncEnabled: boolean;
   expectedVersion?: number;
+}
+
+export interface VocabularyEntryRecordV1 {
+  id: string;
+  userId?: string;
+  spokenPhrase: string;
+  replacementTerm: string;
+  category: string;
+  updatedAtUtc: string;
+}
+
+export interface UpsertVocabularyEntryRequestV1 {
+  spokenPhrase: string;
+  replacementTerm: string;
+  category: string;
 }
 
 export interface PaginatedListResponseV1<T> {

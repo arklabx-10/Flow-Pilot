@@ -15,6 +15,7 @@ public sealed class FlowPilotDbContext(DbContextOptions<FlowPilotDbContext> opti
     public DbSet<NoteEntity> Notes => Set<NoteEntity>();
     public DbSet<PromptTemplateEntity> PromptTemplates => Set<PromptTemplateEntity>();
     public DbSet<ProcessingPreferenceEntity> ProcessingPreferences => Set<ProcessingPreferenceEntity>();
+    public DbSet<VocabularyEntryEntity> VocabularyEntries => Set<VocabularyEntryEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -79,6 +80,16 @@ public sealed class FlowPilotDbContext(DbContextOptions<FlowPilotDbContext> opti
             entity.Property(x => x.DefaultLanguage).HasMaxLength(32).IsRequired();
             entity.Property(x => x.PreferredSpeechMode).HasMaxLength(32).IsRequired();
             entity.Property(x => x.PreferredRefinementMode).HasMaxLength(32).IsRequired();
+        });
+
+        modelBuilder.Entity<VocabularyEntryEntity>(entity =>
+        {
+            entity.ToTable("vocabulary_entries");
+            entity.HasKey(x => new { x.UserId, x.Id });
+            entity.HasIndex(x => new { x.UserId, x.SpokenPhrase });
+            entity.Property(x => x.SpokenPhrase).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.ReplacementTerm).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.Category).HasMaxLength(100).IsRequired();
         });
     }
 }

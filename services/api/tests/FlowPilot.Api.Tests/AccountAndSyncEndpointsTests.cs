@@ -322,6 +322,23 @@ public sealed class AccountAndSyncEndpointsTests(WebApplicationFactory<Program> 
         Assert.Equal("coding-prompt", prefs.DefaultOutputMode);
         Assert.True(prefs.AutoCopyToClipboard);
         Assert.True(prefs.SyncEnabled);
+
+        // Custom Vocabulary
+        var vocabResp = await client.PutAsJsonAsync(
+            "/api/v1/vocabulary/voc-flowpilot",
+            new UpsertVocabularyEntryRequestV1(
+                SpokenPhrase: "flow pilot",
+                ReplacementTerm: "FlowPilot",
+                Category: "Product"));
+        Assert.Equal(HttpStatusCode.OK, vocabResp.StatusCode);
+
+        var vocabList = await client.GetFromJsonAsync<List<VocabularyEntryRecordV1>>("/api/v1/vocabulary");
+        Assert.Single(vocabList!);
+        Assert.Equal("FlowPilot", vocabList![0].ReplacementTerm);
+
+        var delVocabResp = await client.DeleteAsync("/api/v1/vocabulary/voc-flowpilot");
+        Assert.Equal(HttpStatusCode.OK, delVocabResp.StatusCode);
+        Assert.Empty((await client.GetFromJsonAsync<List<VocabularyEntryRecordV1>>("/api/v1/vocabulary"))!);
     }
 
     [Fact]

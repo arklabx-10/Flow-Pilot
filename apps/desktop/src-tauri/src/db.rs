@@ -2,7 +2,7 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-pub const LOCAL_SCHEMA_VERSION: u32 = 3;
+pub const LOCAL_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +54,16 @@ pub struct SyncedNoteRecord {
     pub tags_json: String,
     pub source_transcript_id: Option<String>,
     pub version: i32,
+    pub updated_at_utc: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalVocabularyRecord {
+    pub id: String,
+    pub spoken_phrase: String,
+    pub replacement_term: String,
+    pub category: String,
     pub updated_at_utc: String,
 }
 
@@ -111,6 +121,13 @@ pub fn initialize_connection(conn: &Connection) -> Result<(), rusqlite::Error> {
              tags_json TEXT NOT NULL,
              source_transcript_id TEXT NULL,
              version INTEGER NOT NULL DEFAULT 1,
+             updated_at_utc TEXT NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS custom_vocabulary (
+             id TEXT PRIMARY KEY NOT NULL,
+             spoken_phrase TEXT NOT NULL,
+             replacement_term TEXT NOT NULL,
+             category TEXT NOT NULL,
              updated_at_utc TEXT NOT NULL
          );",
     )?;

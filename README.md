@@ -1,6 +1,21 @@
 # FlowPilot
 
-**FlowPilot** is a personal AI dictation product featuring a native Windows desktop application (Tauri 2 + React + TypeScript + local SQLite) and a web companion application (React + TypeScript), backed by an ASP.NET Core Web API (.NET 10 LTS + PostgreSQL) and explicit OpenAPI contracts.
+**FlowPilot** is an offline-first personal AI dictation product featuring a native Windows desktop application (Tauri 2 + React 19 + TypeScript + local SQLite + `whisper.cpp`) and a web companion application (React 19 + TypeScript), backed by an ASP.NET Core Web API (.NET 10 LTS + PostgreSQL) and explicit OpenAPI 3.1 contracts.
+
+---
+
+## Completed Capabilities (Phases 1–5)
+
+1. **Phase 1 — Monorepo & Contract-First Foundation**:
+   - Strict workspace boundaries (`apps/desktop`, `apps/web`, `services/api`, `packages/contracts`, `docs`, `scripts`), `AGENTS.md` charter, and self-contained CI verification.
+2. **Phase 2 — Real Desktop Dictation Vertical Slice**:
+   - Microphone capture (`MediaRecorder`), deterministic output modes (**Raw Transcription**, **Clean Text**, **Professional Message**, **Coding Prompt**, **Quick Note**), verbatim transcript preservation, Windows clipboard integration, and local SQLite/browser history.
+3. **Phase 3 — Local (`whisper.cpp`) & Cloud Speech Providers**:
+   - Pluggable `ISpeechRecognitionProvider` with non-blocking local `whisper.cpp` GGML model management (selection, download progress, cancellation) and server-proxied Cloud Speech with explicit outbound audio privacy notices.
+4. **Phase 4 — Shared History & Offline Synchronization**:
+   - Authenticated ASP.NET Core endpoints (`/api/v1/auth/*`, `/devices`, `/transcripts`, `/notes`, `/prompt-templates`, `/preferences`), PostgreSQL migrations & composite indexes, PBKDF2 + HMAC-SHA256 Bearer auth, record-level ownership, optimistic version concurrency (`HTTP 409 Conflict`), idempotent `PUT` operations, soft/hard deletion policy, and `DesktopSyncEngine` with bounded exponential backoff.
+5. **Phase 5 — Global Windows Shortcuts, System Tray & Custom Vocabulary**:
+   - Configurable keyboard shortcuts (`Ctrl+Shift+Space` toggle recording, `Ctrl+Shift+C` copy output, `Escape` cancel), system tray preferences, and cross-device Custom Vocabulary (`/api/v1/vocabulary`) for automatic spoken-to-written term replacement.
 
 ---
 

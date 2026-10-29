@@ -240,6 +240,29 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TranscriptSyncResponseV1'
+  /api/v1/vocabulary:
+    get:
+      operationId: listVocabularyV1
+      summary: List custom vocabulary / spoken-to-written replacements for the authenticated user
+      tags: [Vocabulary]
+      responses:
+        '200':
+          description: Custom vocabulary list.
+  /api/v1/vocabulary/{id}:
+    put:
+      operationId: upsertVocabularyV1
+      summary: Create or update a custom vocabulary entry
+      tags: [Vocabulary]
+      responses:
+        '200':
+          description: Vocabulary entry saved.
+    delete:
+      operationId: deleteVocabularyV1
+      summary: Delete a custom vocabulary entry
+      tags: [Vocabulary]
+      responses:
+        '200':
+          description: Vocabulary entry deleted.
 components:
   schemas:
     ServiceHealthStatus:

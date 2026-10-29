@@ -121,6 +121,19 @@ public sealed record UpdateProcessingPreferencesRequestV1(
     bool SyncEnabled,
     int? ExpectedVersion = null);
 
+public sealed record VocabularyEntryRecordV1(
+    string Id,
+    string UserId,
+    string SpokenPhrase,
+    string ReplacementTerm,
+    string Category,
+    string UpdatedAtUtc);
+
+public sealed record UpsertVocabularyEntryRequestV1(
+    string SpokenPhrase,
+    string ReplacementTerm,
+    string Category);
+
 public sealed record PaginatedListResponseV1<T>(
     IReadOnlyList<T> Items,
     int Page,
