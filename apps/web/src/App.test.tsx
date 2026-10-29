@@ -1,12 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
+  AccountDataExportResponseV1,
   AuthSessionResponseV1,
   NoteRecordV1,
   PaginatedListResponseV1,
   ProcessingPreferencesRecordV1,
   PromptTemplateRecordV1,
   TranscriptRecordV1,
+  UsageTelemetrySummaryResponseV1,
 } from '@flowpilot/contracts';
 import { App } from './App.js';
 
@@ -363,6 +365,51 @@ describe('FlowPilot Web Companion App — Auth, History, Notes, Templates & Pref
         });
       }
 
+      if (method === 'GET' && url.includes('/api/v1/telemetry/summary')) {
+        const summary: UsageTelemetrySummaryResponseV1 = {
+          totalTranscripts: 5,
+          totalSavedNotes: 2,
+          totalDurationMs: 18500,
+          estimatedWordsDictated: 140,
+          estimatedTimeSavedMinutes: 2.3,
+          modeBreakdown: { clean: 3, 'coding-prompt': 2 },
+          contractVersion: 'v1',
+        };
+        return new Response(JSON.stringify(summary), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (method === 'GET' && url.includes('/api/v1/account/export')) {
+        const exported: AccountDataExportResponseV1 = {
+          exportedAtUtc: '2026-10-29T19:00:00Z',
+          user: {
+            id: 'usr-2',
+            email: 'notes@example.com',
+            displayName: 'Notes Pilot',
+          },
+          devices: [],
+          transcripts: [],
+          notes,
+          promptTemplates: templates,
+          vocabulary: [],
+          preferences,
+          contractVersion: 'v1',
+        };
+        return new Response(JSON.stringify(exported), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (method === 'DELETE' && url.includes('/api/v1/account')) {
+        return new Response(JSON.stringify({ userId: 'usr-2', purged: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
       return new Response(null, { status: 404 });
     });
 
@@ -426,6 +473,24 @@ describe('FlowPilot Web Companion App — Auth, History, Notes, Templates & Pref
 
     await waitFor(() => {
       expect(screen.getByTestId('preferences-saved-badge')).toBeDefined();
+    });
+
+    // Switch to Analytics & Privacy tab, inspect telemetry, export personal data JSON, and purge account
+    fireEvent.click(screen.getByRole('button', { name: 'Analytics & Privacy' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('telemetry-words-dictated').textContent).toBe('140');
+    });
+
+    fireEvent.click(screen.getByTestId('export-account-data-button'));
+    await waitFor(() => {
+      expect(screen.getByTestId('account-export-preview').textContent).toContain(
+        'notes@example.com',
+      );
+    });
+
+    fireEvent.click(screen.getByTestId('purge-account-button'));
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-gate-panel')).toBeDefined();
     });
   });
 });

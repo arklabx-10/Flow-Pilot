@@ -263,6 +263,30 @@ paths:
       responses:
         '200':
           description: Vocabulary entry deleted.
+  /api/v1/telemetry/summary:
+    get:
+      operationId: getUsageTelemetrySummaryV1
+      summary: Get dictation productivity and usage telemetry summary for the authenticated user
+      tags: [Telemetry]
+      responses:
+        '200':
+          description: Aggregated dictation productivity telemetry.
+  /api/v1/account/export:
+    get:
+      operationId: exportAccountDataV1
+      summary: Export all personal account data, transcripts, notes, templates, vocabulary, and preferences
+      tags: [Account]
+      responses:
+        '200':
+          description: Personal data export payload.
+  /api/v1/account:
+    delete:
+      operationId: deleteAccountV1
+      summary: Permanently delete the authenticated user account and purge all associated personal data
+      tags: [Account]
+      responses:
+        '200':
+          description: Account and personal data permanently purged.
 components:
   schemas:
     ServiceHealthStatus:

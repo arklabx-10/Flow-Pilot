@@ -16,6 +16,9 @@ export const ACCOUNT_SYNC_PATHS_V1 = {
   promptTemplates: '/api/v1/prompt-templates',
   preferences: '/api/v1/preferences',
   vocabulary: '/api/v1/vocabulary',
+  telemetrySummary: '/api/v1/telemetry/summary',
+  accountExport: '/api/v1/account/export',
+  accountDelete: '/api/v1/account',
 } as const;
 
 export type SyncItemState =
@@ -179,6 +182,28 @@ export interface UpsertVocabularyEntryRequestV1 {
   category: string;
 }
 
+export interface UsageTelemetrySummaryResponseV1 {
+  totalTranscripts: number;
+  totalSavedNotes: number;
+  totalDurationMs: number;
+  estimatedWordsDictated: number;
+  estimatedTimeSavedMinutes: number;
+  modeBreakdown: Record<string, number>;
+  contractVersion: typeof CONTRACT_VERSION_V1 | string;
+}
+
+export interface AccountDataExportResponseV1 {
+  exportedAtUtc: string;
+  user: UserProfileV1;
+  devices: DeviceRecordV1[];
+  transcripts: TranscriptRecordV1[];
+  notes: NoteRecordV1[];
+  promptTemplates: PromptTemplateRecordV1[];
+  vocabulary: VocabularyEntryRecordV1[];
+  preferences: ProcessingPreferencesRecordV1 | null;
+  contractVersion: typeof CONTRACT_VERSION_V1 | string;
+}
+
 export interface PaginatedListResponseV1<T> {
   items: T[];
   page: number;
@@ -240,5 +265,44 @@ export function isSyncConflictResponseV1<T>(value: unknown): value is SyncConfli
     typeof candidate.serverVersion === 'number' &&
     typeof candidate.serverRecord === 'object' &&
     candidate.serverRecord !== null
+  );
+}
+
+export function isUsageTelemetrySummaryResponseV1(
+  value: unknown,
+): value is UsageTelemetrySummaryResponseV1 {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.totalTranscripts === 'number' &&
+    typeof candidate.totalSavedNotes === 'number' &&
+    typeof candidate.totalDurationMs === 'number' &&
+    typeof candidate.estimatedWordsDictated === 'number' &&
+    typeof candidate.estimatedTimeSavedMinutes === 'number' &&
+    typeof candidate.modeBreakdown === 'object' &&
+    candidate.modeBreakdown !== null &&
+    typeof candidate.contractVersion === 'string'
+  );
+}
+
+export function isAccountDataExportResponseV1(
+  value: unknown,
+): value is AccountDataExportResponseV1 {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.exportedAtUtc === 'string' &&
+    typeof candidate.user === 'object' &&
+    candidate.user !== null &&
+    Array.isArray(candidate.devices) &&
+    Array.isArray(candidate.transcripts) &&
+    Array.isArray(candidate.notes) &&
+    Array.isArray(candidate.promptTemplates) &&
+    Array.isArray(candidate.vocabulary) &&
+    typeof candidate.contractVersion === 'string'
   );
 }

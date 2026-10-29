@@ -3,6 +3,7 @@ import {
   CONTRACT_VERSION_V1,
   HEALTH_PATHS_V1,
   isHealthStatusResponseV1,
+  type AccountDataExportResponseV1,
   type AuthSessionResponseV1,
   type ContractOutputModeV1,
   type HealthStatusResponseV1,
@@ -10,6 +11,7 @@ import {
   type ProcessingPreferencesRecordV1,
   type PromptTemplateRecordV1,
   type TranscriptRecordV1,
+  type UsageTelemetrySummaryResponseV1,
   type VocabularyEntryRecordV1,
 } from '@flowpilot/contracts';
 import { WebApiClient } from './apiClient.js';
@@ -17,7 +19,8 @@ import { WebApiClient } from './apiClient.js';
 const DEFAULT_API_BASE_URL = 'http://localhost:5080';
 const WEB_SESSION_STORAGE_KEY = 'flowpilot_web_auth_session_v1';
 
-type WebRouteTab = 'transcripts' | 'notes' | 'vocabulary' | 'templates' | 'preferences';
+type WebRouteTab =
+  'transcripts' | 'notes' | 'vocabulary' | 'templates' | 'preferences' | 'analytics';
 
 export interface AppProps {
   apiBaseUrl?: string;
@@ -117,6 +120,11 @@ export function App({ apiBaseUrl, autoCheckHealth = true, fetchImpl }: AppProps)
     updatedAtUtc: '',
   });
   const [preferencesSaved, setPreferencesSaved] = useState<boolean>(false);
+
+  // Analytics & Privacy Compliance state
+  const [telemetry, setTelemetry] = useState<UsageTelemetrySummaryResponseV1 | null>(null);
+  const [exportedAccountData, setExportedAccountData] =
+    useState<AccountDataExportResponseV1 | null>(null);
 
   const checkApiHealth = useCallback(async () => {
     setConnectionState('checking');
@@ -397,6 +405,58 @@ export function App({ apiBaseUrl, autoCheckHealth = true, fetchImpl }: AppProps)
     }
   };
 
+  const handleLoadTelemetry = async () => {
+    setSyncState('syncing');
+    setErrorMessage(null);
+    try {
+      const summary = await client.getTelemetrySummary();
+      setTelemetry(summary);
+      setSyncState('synced');
+    } catch (error) {
+      setSyncState('error');
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Failed to load productivity telemetry.',
+      );
+    }
+  };
+
+  const handleExportAccountData = async () => {
+    setSyncState('syncing');
+    setErrorMessage(null);
+    try {
+      const exported = await client.exportAccountData();
+      setExportedAccountData(exported);
+      setSyncState('synced');
+    } catch (error) {
+      setSyncState('error');
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Failed to export personal account data.',
+      );
+    }
+  };
+
+  const handlePurgeAccount = async () => {
+    setSyncState('syncing');
+    setErrorMessage(null);
+    try {
+      await client.deleteAccount();
+      setSession(null);
+      setTranscripts([]);
+      setNotes([]);
+      setTemplates([]);
+      setVocabList([]);
+      setTelemetry(null);
+      setExportedAccountData(null);
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem(WEB_SESSION_STORAGE_KEY);
+      }
+      setSyncState('idle');
+    } catch (error) {
+      setSyncState('error');
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to delete account.');
+    }
+  };
+
   return (
     <main className="app-shell">
       <header className="header">
@@ -571,6 +631,16 @@ export function App({ apiBaseUrl, autoCheckHealth = true, fetchImpl }: AppProps)
               onClick={() => setActiveTab('preferences')}
             >
               Processing Preferences
+            </button>
+            <button
+              type="button"
+              className={`button ${activeTab === 'analytics' ? '' : 'button-secondary'}`}
+              onClick={() => {
+                setActiveTab('analytics');
+                void handleLoadTelemetry();
+              }}
+            >
+              Analytics &amp; Privacy
             </button>
           </nav>
 
@@ -1059,6 +1129,88 @@ export function App({ apiBaseUrl, autoCheckHealth = true, fetchImpl }: AppProps)
                 </div>
               </form>
             </section>
+          )}
+
+          {activeTab === 'analytics' && (
+            <div className="card-grid" data-testid="analytics-view">
+              <section className="card">
+                <h2>Dictation Productivity Telemetry</h2>
+                <p>
+                  Aggregated cloud metrics calculated strictly from your synchronized transcripts
+                  and notes without retaining raw audio.
+                </p>
+                {telemetry ? (
+                  <ul className="meta-list" data-testid="web-telemetry-summary">
+                    <li>
+                      <span>Total Synchronized Transcripts</span>
+                      <strong>{telemetry.totalTranscripts}</strong>
+                    </li>
+                    <li>
+                      <span>Total Saved Notes</span>
+                      <strong>{telemetry.totalSavedNotes}</strong>
+                    </li>
+                    <li>
+                      <span>Estimated Words Dictated</span>
+                      <strong data-testid="telemetry-words-dictated">
+                        {telemetry.estimatedWordsDictated}
+                      </strong>
+                    </li>
+                    <li>
+                      <span>Estimated Time Saved</span>
+                      <strong data-testid="telemetry-time-saved">
+                        {telemetry.estimatedTimeSavedMinutes} min
+                      </strong>
+                    </li>
+                  </ul>
+                ) : (
+                  <p>Loading productivity telemetry...</p>
+                )}
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => void handleLoadTelemetry()}
+                >
+                  Refresh Telemetry
+                </button>
+              </section>
+
+              <section className="card">
+                <h2>Personal Data Export &amp; Account Deletion</h2>
+                <p>
+                  Export all of your FlowPilot personal data (profile, devices, transcripts, notes,
+                  templates, vocabulary, and preferences) as portable JSON, or permanently purge
+                  your account.
+                </p>
+                <div className="button-row">
+                  <button
+                    type="button"
+                    className="button"
+                    data-testid="export-account-data-button"
+                    onClick={() => void handleExportAccountData()}
+                  >
+                    Export Personal Data JSON
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-danger"
+                    data-testid="purge-account-button"
+                    onClick={() => void handlePurgeAccount()}
+                  >
+                    Delete Account &amp; Purge Data
+                  </button>
+                </div>
+
+                {exportedAccountData && (
+                  <pre
+                    className="input"
+                    style={{ marginTop: '1rem', maxHeight: '220px', overflow: 'auto' }}
+                    data-testid="account-export-preview"
+                  >
+                    {JSON.stringify(exportedAccountData, null, 2)}
+                  </pre>
+                )}
+              </section>
+            </div>
           )}
         </section>
       )}

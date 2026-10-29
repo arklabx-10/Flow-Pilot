@@ -392,4 +392,66 @@ public sealed class AccountAndSyncEndpointsTests(WebApplicationFactory<Program> 
                 ClientUpdatedAtUtc: ""));
         Assert.Equal(HttpStatusCode.BadRequest, invalidNote.StatusCode);
     }
+
+    [Fact]
+    public async Task TelemetrySummary_AccountDataExport_AndAccountDeletion_WorkAndEnforceIsolation()
+    {
+        await using var appFactory = CreateIsolatedFactory(Guid.NewGuid().ToString());
+        using var client = appFactory.CreateClient();
+
+        var session = await (await client.PostAsJsonAsync(
+                "/api/v1/auth/register",
+                new RegisterRequestV1("export@example.com", "ExportPass!123", "Export Pilot")))
+            .Content.ReadFromJsonAsync<AuthSessionResponseV1>();
+
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", session!.AccessToken);
+
+        await client.PutAsJsonAsync(
+            "/api/v1/transcripts/tr-exp-1",
+            new UpsertTranscriptRequestV1(
+                IdempotencyKey: "idem-exp-1",
+                ExpectedVersion: 0,
+                DeviceId: "win-desktop",
+                OriginalTranscript: "one two three four five six",
+                RefinedTranscript: "One two three four five six.",
+                EditedText: "One two three four five six.",
+                OutputMode: "clean",
+                ProviderId: "local-whisper-cpp",
+                DurationMs: 3200,
+                ClientUpdatedAtUtc: DateTimeOffset.UtcNow.ToString("O")));
+
+        await client.PutAsJsonAsync(
+            "/api/v1/notes/note-exp-1",
+            new UpsertNoteRequestV1(
+                IdempotencyKey: "idem-note-exp-1",
+                ExpectedVersion: 0,
+                DeviceId: "web",
+                Title: "Compliance Note",
+                Content: "Exportable note body",
+                Folder: "Security",
+                Tags: ["gdpr", "export"],
+                SourceTranscriptId: "tr-exp-1",
+                ClientUpdatedAtUtc: DateTimeOffset.UtcNow.ToString("O")));
+
+        var telemetry = await client.GetFromJsonAsync<UsageTelemetrySummaryResponseV1>("/api/v1/telemetry/summary");
+        Assert.NotNull(telemetry);
+        Assert.Equal(1, telemetry.TotalTranscripts);
+        Assert.Equal(1, telemetry.TotalSavedNotes);
+        Assert.Equal(3200, telemetry.TotalDurationMs);
+        Assert.Equal(6, telemetry.EstimatedWordsDictated);
+        Assert.Equal(1, telemetry.ModeBreakdown["clean"]);
+
+        var exported = await client.GetFromJsonAsync<AccountDataExportResponseV1>("/api/v1/account/export");
+        Assert.NotNull(exported);
+        Assert.Equal("export@example.com", exported.User.Email);
+        Assert.Single(exported.Transcripts);
+        Assert.Single(exported.Notes);
+
+        var deleteAccountResp = await client.DeleteAsync("/api/v1/account");
+        Assert.Equal(HttpStatusCode.OK, deleteAccountResp.StatusCode);
+
+        var postDeleteExportResp = await client.GetAsync("/api/v1/account/export");
+        Assert.Equal(HttpStatusCode.NotFound, postDeleteExportResp.StatusCode);
+    }
 }

@@ -4,7 +4,7 @@
 
 ---
 
-## Completed Capabilities (Phases 1–5)
+## Completed Capabilities (Phases 1–6)
 
 1. **Phase 1 — Monorepo & Contract-First Foundation**:
    - Strict workspace boundaries (`apps/desktop`, `apps/web`, `services/api`, `packages/contracts`, `docs`, `scripts`), `AGENTS.md` charter, and self-contained CI verification.
@@ -16,6 +16,8 @@
    - Authenticated ASP.NET Core endpoints (`/api/v1/auth/*`, `/devices`, `/transcripts`, `/notes`, `/prompt-templates`, `/preferences`), PostgreSQL migrations & composite indexes, PBKDF2 + HMAC-SHA256 Bearer auth, record-level ownership, optimistic version concurrency (`HTTP 409 Conflict`), idempotent `PUT` operations, soft/hard deletion policy, and `DesktopSyncEngine` with bounded exponential backoff.
 5. **Phase 5 — Global Windows Shortcuts, System Tray & Custom Vocabulary**:
    - Configurable keyboard shortcuts (`Ctrl+Shift+Space` toggle recording, `Ctrl+Shift+C` copy output, `Escape` cancel), system tray preferences, and cross-device Custom Vocabulary (`/api/v1/vocabulary`) for automatic spoken-to-written term replacement.
+6. **Phase 6 — Usage Telemetry, Personal Data Export/Deletion Compliance & Active-Window Auto-Paste**:
+   - Productivity telemetry aggregation (`/api/v1/telemetry/summary` and local desktop productivity metrics), GDPR/privacy JSON personal data export (`/api/v1/account/export`), full account & data purge (`DELETE /api/v1/account`), and Windows active-window auto-paste readiness (`simulate_active_window_paste`).
 
 ---
 

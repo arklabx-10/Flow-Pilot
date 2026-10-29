@@ -111,6 +111,14 @@ fn check_local_whisper_engine(app_handle: tauri::AppHandle) -> bool {
 }
 
 #[tauri::command]
+fn simulate_active_window_paste(text_length: usize) -> Result<bool, String> {
+    if text_length == 0 {
+        return Err("Cannot simulate active window paste for empty text.".to_string());
+    }
+    Ok(true)
+}
+
+#[tauri::command]
 async fn transcribe_local_whisper(
     app_handle: tauri::AppHandle,
     model_file_name: String,
@@ -144,6 +152,7 @@ pub fn run() {
             list_offline_sync_queue_items,
             remove_offline_sync_queue_item,
             check_local_whisper_engine,
+            simulate_active_window_paste,
             transcribe_local_whisper
         ])
         .run(tauri::generate_context!())

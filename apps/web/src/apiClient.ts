@@ -1,8 +1,11 @@
 import {
   ACCOUNT_SYNC_PATHS_V1,
+  isAccountDataExportResponseV1,
   isApiErrorResponseV1,
   isAuthSessionResponseV1,
   isPaginatedListResponseV1,
+  isUsageTelemetrySummaryResponseV1,
+  type AccountDataExportResponseV1,
   type AuthSessionResponseV1,
   type NoteRecordV1,
   type PaginatedListResponseV1,
@@ -14,6 +17,7 @@ import {
   type UpsertPromptTemplateRequestV1,
   type UpsertTranscriptRequestV1,
   type UpsertVocabularyEntryRequestV1,
+  type UsageTelemetrySummaryResponseV1,
   type VocabularyEntryRecordV1,
 } from '@flowpilot/contracts';
 
@@ -316,6 +320,48 @@ export class WebApiClient {
     if (!response.ok) {
       throw await this.toError(response, 'Failed to delete custom vocabulary entry.');
     }
+  }
+
+  public async getTelemetrySummary(): Promise<UsageTelemetrySummaryResponseV1> {
+    const response = await this.fetchImpl(
+      `${this.baseUrl}${ACCOUNT_SYNC_PATHS_V1.telemetrySummary}`,
+      {
+        headers: this.authHeaders(),
+      },
+    );
+    if (!response.ok) {
+      throw await this.toError(response, 'Failed to load usage telemetry summary.');
+    }
+    const body: unknown = await response.json();
+    if (!isUsageTelemetrySummaryResponseV1(body)) {
+      throw new Error('Invalid usage telemetry summary response.');
+    }
+    return body;
+  }
+
+  public async exportAccountData(): Promise<AccountDataExportResponseV1> {
+    const response = await this.fetchImpl(`${this.baseUrl}${ACCOUNT_SYNC_PATHS_V1.accountExport}`, {
+      headers: this.authHeaders(),
+    });
+    if (!response.ok) {
+      throw await this.toError(response, 'Failed to export personal account data.');
+    }
+    const body: unknown = await response.json();
+    if (!isAccountDataExportResponseV1(body)) {
+      throw new Error('Invalid account data export response.');
+    }
+    return body;
+  }
+
+  public async deleteAccount(): Promise<void> {
+    const response = await this.fetchImpl(`${this.baseUrl}${ACCOUNT_SYNC_PATHS_V1.accountDelete}`, {
+      method: 'DELETE',
+      headers: this.authHeaders(),
+    });
+    if (!response.ok) {
+      throw await this.toError(response, 'Failed to delete account.');
+    }
+    this.accessToken = null;
   }
 
   private authHeaders(): Record<string, string> {

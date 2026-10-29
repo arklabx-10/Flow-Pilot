@@ -24,9 +24,12 @@ export {
 
 export {
   ACCOUNT_SYNC_PATHS_V1,
+  isAccountDataExportResponseV1,
   isAuthSessionResponseV1,
   isPaginatedListResponseV1,
   isSyncConflictResponseV1,
+  isUsageTelemetrySummaryResponseV1,
+  type AccountDataExportResponseV1,
   type AuthSessionResponseV1,
   type DeviceRecordV1,
   type LoginRequestV1,
@@ -44,6 +47,7 @@ export {
   type UpsertPromptTemplateRequestV1,
   type UpsertTranscriptRequestV1,
   type UpsertVocabularyEntryRequestV1,
+  type UsageTelemetrySummaryResponseV1,
   type UserProfileV1,
   type VocabularyEntryRecordV1,
 } from './v1/accountAndSync.js';

@@ -7,6 +7,7 @@ import {
   CONTRACT_VERSION_V1,
   HEALTH_PATHS_V1,
   SPEECH_PATHS_V1,
+  isAccountDataExportResponseV1,
   isApiErrorResponseV1,
   isAuthSessionResponseV1,
   isCloudTextRefineResponseV1,
@@ -15,11 +16,14 @@ import {
   isPaginatedListResponseV1,
   isSyncConflictResponseV1,
   isTranscriptSyncResponseV1,
+  isUsageTelemetrySummaryResponseV1,
+  type AccountDataExportResponseV1,
   type AuthSessionResponseV1,
   type CloudTranscriptionResponseV1,
   type HealthStatusResponseV1,
   type PaginatedListResponseV1,
   type TranscriptRecordV1,
+  type UsageTelemetrySummaryResponseV1,
 } from '../src/index.js';
 
 describe('@flowpilot/contracts v1', () => {
@@ -158,5 +162,43 @@ describe('@flowpilot/contracts v1', () => {
     expect(parsed.paths).toHaveProperty(ACCOUNT_SYNC_PATHS_V1.promptTemplates);
     expect(parsed.paths).toHaveProperty(ACCOUNT_SYNC_PATHS_V1.preferences);
     expect(parsed.paths).toHaveProperty(ACCOUNT_SYNC_PATHS_V1.vocabulary);
+    expect(parsed.paths).toHaveProperty(ACCOUNT_SYNC_PATHS_V1.telemetrySummary);
+    expect(parsed.paths).toHaveProperty(ACCOUNT_SYNC_PATHS_V1.accountExport);
+    expect(parsed.paths).toHaveProperty(ACCOUNT_SYNC_PATHS_V1.accountDelete);
+  });
+
+  it('validates Phase 6 usage telemetry summary and personal data export contracts', () => {
+    const telemetry: UsageTelemetrySummaryResponseV1 = {
+      totalTranscripts: 12,
+      totalSavedNotes: 4,
+      totalDurationMs: 48000,
+      estimatedWordsDictated: 360,
+      estimatedTimeSavedMinutes: 5.8,
+      modeBreakdown: {
+        clean: 8,
+        'coding-prompt': 4,
+      },
+      contractVersion: 'v1',
+    };
+    expect(isUsageTelemetrySummaryResponseV1(telemetry)).toBe(true);
+    expect(isUsageTelemetrySummaryResponseV1({ totalTranscripts: 'invalid' })).toBe(false);
+
+    const exported: AccountDataExportResponseV1 = {
+      exportedAtUtc: '2026-10-29T18:30:00Z',
+      user: {
+        id: 'usr-1',
+        email: 'pilot@example.com',
+        displayName: 'Flow Pilot',
+      },
+      devices: [],
+      transcripts: [],
+      notes: [],
+      promptTemplates: [],
+      vocabulary: [],
+      preferences: null,
+      contractVersion: 'v1',
+    };
+    expect(isAccountDataExportResponseV1(exported)).toBe(true);
+    expect(isAccountDataExportResponseV1(null)).toBe(false);
   });
 });

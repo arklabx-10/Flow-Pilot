@@ -134,6 +134,26 @@ public sealed record UpsertVocabularyEntryRequestV1(
     string ReplacementTerm,
     string Category);
 
+public sealed record UsageTelemetrySummaryResponseV1(
+    int TotalTranscripts,
+    int TotalSavedNotes,
+    long TotalDurationMs,
+    int EstimatedWordsDictated,
+    double EstimatedTimeSavedMinutes,
+    IReadOnlyDictionary<string, int> ModeBreakdown,
+    string ContractVersion);
+
+public sealed record AccountDataExportResponseV1(
+    string ExportedAtUtc,
+    UserProfileV1 User,
+    IReadOnlyList<DeviceRecordV1> Devices,
+    IReadOnlyList<TranscriptRecordV1> Transcripts,
+    IReadOnlyList<NoteRecordV1> Notes,
+    IReadOnlyList<PromptTemplateRecordV1> PromptTemplates,
+    IReadOnlyList<VocabularyEntryRecordV1> Vocabulary,
+    ProcessingPreferencesRecordV1? Preferences,
+    string ContractVersion);
+
 public sealed record PaginatedListResponseV1<T>(
     IReadOnlyList<T> Items,
     int Page,

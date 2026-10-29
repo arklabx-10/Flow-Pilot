@@ -31,6 +31,7 @@ import {
   type TranscriptConflictItem,
 } from './dictation/syncEngine.js';
 import { DeterministicTextRefinementService } from './dictation/textRefinement.js';
+import { computeLocalProductivityMetrics } from './dictation/telemetryAndAutoPaste.js';
 import {
   OUTPUT_MODES,
   OUTPUT_MODE_LABELS,
@@ -143,6 +144,11 @@ export function App({
   const [newSpokenPhrase, setNewSpokenPhrase] = useState<string>('');
   const [newReplacementTerm, setNewReplacementTerm] = useState<string>('');
   const newVocabCategory = 'Product';
+  const [autoPasteActiveWindow, setAutoPasteActiveWindow] = useState<boolean>(true);
+  const localMetrics = useMemo(
+    () => computeLocalProductivityMetrics(historyEntries),
+    [historyEntries],
+  );
 
   const refreshSyncState = useCallback(async () => {
     const conflictList = await syncEngine.listConflicts();
@@ -846,6 +852,19 @@ export function App({
               />
               Minimize to Windows system tray on close
             </label>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={autoPasteActiveWindow}
+                onChange={(e) => setAutoPasteActiveWindow(e.target.checked)}
+              />
+              Auto-inject / paste dictated text into active Windows window on copy
+            </label>
+            <p className="storage-meta" data-testid="desktop-productivity-metrics">
+              Productivity: <strong>{localMetrics.totalWordsDictated}</strong> words dictated across{' '}
+              <strong>{localMetrics.totalSessions}</strong> sessions (~
+              <strong>{localMetrics.estimatedTimeSavedMinutes} min</strong> saved)
+            </p>
 
             <div className="search-row" style={{ marginTop: '0.75rem' }}>
               <label htmlFor="desktop-vocab-spoken">Add Custom Vocabulary Term</label>

@@ -876,6 +876,151 @@ public static class AccountAndSyncEndpoints
             })
             .RequireAuthorization()
             .WithTags("Vocabulary");
+
+        // --- Usage Telemetry & Account Data Export / Deletion Compliance ---
+        v1.MapGet("/telemetry/summary", async (
+                ClaimsPrincipal principal,
+                FlowPilotDbContext db,
+                CancellationToken ct) =>
+            {
+                var userId = GetRequiredUserId(principal);
+                var activeTranscripts = await db.Transcripts
+                    .Where(t => t.UserId == userId && !t.IsDeleted)
+                    .ToListAsync(ct);
+
+                var activeNotesCount = await db.Notes
+                    .CountAsync(n => n.UserId == userId && !n.IsDeleted, ct);
+
+                var totalDurationMs = activeTranscripts.Sum(t => t.DurationMs);
+                var estimatedWords = activeTranscripts.Sum(t =>
+                    string.IsNullOrWhiteSpace(t.EditedText)
+                        ? 0
+                        : t.EditedText.Split([' ', '\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries).Length);
+
+                var estimatedTimeSavedMinutes = Math.Round(estimatedWords / 40.0 * 0.65, 1);
+                var modeBreakdown = activeTranscripts
+                    .GroupBy(t => string.IsNullOrWhiteSpace(t.OutputMode) ? "clean" : t.OutputMode)
+                    .ToDictionary(g => g.Key, g => g.Count());
+
+                return Results.Ok(new UsageTelemetrySummaryResponseV1(
+                    TotalTranscripts: activeTranscripts.Count,
+                    TotalSavedNotes: activeNotesCount,
+                    TotalDurationMs: totalDurationMs,
+                    EstimatedWordsDictated: estimatedWords,
+                    EstimatedTimeSavedMinutes: estimatedTimeSavedMinutes,
+                    ModeBreakdown: modeBreakdown,
+                    ContractVersion: "v1"));
+            })
+            .RequireAuthorization()
+            .WithTags("Telemetry");
+
+        v1.MapGet("/account/export", async (
+                ClaimsPrincipal principal,
+                FlowPilotDbContext db,
+                CancellationToken ct) =>
+            {
+                var userId = GetRequiredUserId(principal);
+                var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+                if (user is null)
+                {
+                    return Results.NotFound(new ApiErrorResponseV1(
+                        "USER_NOT_FOUND",
+                        "Authenticated user profile no longer exists.",
+                        false));
+                }
+
+                var devices = await db.Devices
+                    .Where(d => d.UserId == userId)
+                    .OrderByDescending(d => d.LastSeenAtUtc)
+                    .Select(d => new DeviceRecordV1(
+                        d.Id,
+                        d.UserId,
+                        d.DeviceName,
+                        d.Platform,
+                        d.LastSeenAtUtc.ToString("O")))
+                    .ToListAsync(ct);
+
+                var transcripts = (await db.Transcripts
+                        .Where(t => t.UserId == userId && !t.IsDeleted)
+                        .OrderByDescending(t => t.UpdatedAtUtc)
+                        .ToListAsync(ct))
+                    .Select(ToTranscriptContract)
+                    .ToList();
+
+                var notes = (await db.Notes
+                        .Where(n => n.UserId == userId && !n.IsDeleted)
+                        .OrderByDescending(n => n.UpdatedAtUtc)
+                        .ToListAsync(ct))
+                    .Select(ToNoteContract)
+                    .ToList();
+
+                var templates = await db.PromptTemplates
+                    .Where(t => t.UserId == userId)
+                    .OrderBy(t => t.Name)
+                    .Select(t => new PromptTemplateRecordV1(
+                        t.Id,
+                        t.UserId,
+                        t.Name,
+                        t.SystemInstructions,
+                        t.OutputMode,
+                        t.Version,
+                        t.UpdatedAtUtc.ToString("O")))
+                    .ToListAsync(ct);
+
+                var vocabulary = await db.VocabularyEntries
+                    .Where(v => v.UserId == userId)
+                    .OrderBy(v => v.SpokenPhrase)
+                    .Select(v => new VocabularyEntryRecordV1(
+                        v.Id,
+                        v.UserId,
+                        v.SpokenPhrase,
+                        v.ReplacementTerm,
+                        v.Category,
+                        v.UpdatedAtUtc.ToString("O")))
+                    .ToListAsync(ct);
+
+                var prefsEntity = await db.ProcessingPreferences
+                    .FirstOrDefaultAsync(p => p.UserId == userId, ct);
+
+                return Results.Ok(new AccountDataExportResponseV1(
+                    ExportedAtUtc: DateTimeOffset.UtcNow.ToString("O"),
+                    User: new UserProfileV1(user.Id, user.Email, user.DisplayName),
+                    Devices: devices,
+                    Transcripts: transcripts,
+                    Notes: notes,
+                    PromptTemplates: templates,
+                    Vocabulary: vocabulary,
+                    Preferences: prefsEntity is null ? null : ToPreferencesContract(prefsEntity),
+                    ContractVersion: "v1"));
+            })
+            .RequireAuthorization()
+            .WithTags("Account");
+
+        v1.MapDelete("/account", async (
+                ClaimsPrincipal principal,
+                FlowPilotDbContext db,
+                CancellationToken ct) =>
+            {
+                var userId = GetRequiredUserId(principal);
+                var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+                if (user is null)
+                {
+                    return Results.NotFound();
+                }
+
+                db.Devices.RemoveRange(db.Devices.Where(d => d.UserId == userId));
+                db.Transcripts.RemoveRange(db.Transcripts.Where(t => t.UserId == userId));
+                db.Notes.RemoveRange(db.Notes.Where(n => n.UserId == userId));
+                db.PromptTemplates.RemoveRange(db.PromptTemplates.Where(t => t.UserId == userId));
+                db.VocabularyEntries.RemoveRange(db.VocabularyEntries.Where(v => v.UserId == userId));
+                db.ProcessingPreferences.RemoveRange(db.ProcessingPreferences.Where(p => p.UserId == userId));
+                db.Users.Remove(user);
+
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new { userId, purged = true });
+            })
+            .RequireAuthorization()
+            .WithTags("Account");
     }
 
     private static string GetRequiredUserId(ClaimsPrincipal principal)
